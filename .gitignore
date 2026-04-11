@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Next.js
+.next/
+out/
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Build output
+dist/
+
+# Drizzle migrations output
+drizzle/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
