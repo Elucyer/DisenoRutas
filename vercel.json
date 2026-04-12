@@ -3,9 +3,10 @@
   "outputDirectory": "dist",
   "framework": "vite",
   "functions": {
-    "api/**/*.ts": {
-      "maxDuration": 10
-    }
+    "api/routes.ts": { "maxDuration": 10 },
+    "api/routes/[id].ts": { "maxDuration": 10 },
+    "api/strava/routes.ts": { "maxDuration": 10 },
+    "api/strava/status.ts": { "maxDuration": 10 }
   },
   "headers": [
     {

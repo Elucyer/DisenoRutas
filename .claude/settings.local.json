@@ -7,7 +7,9 @@
       "Bash(npm run:*)",
       "Bash(npm uninstall:*)",
       "Bash(grep -n \"fetch\\\\|innerHTML\\\\|dangerouslySetInnerHTML\" /c/Users/Usuario/Documents/Proyectos/Portafolio/RutasMAp/src/components/**/*.tsx)",
-      "Bash(ls c:\\\\Users\\\\Usuario\\\\Documents\\\\Proyectos\\\\Portafolio\\\\RutasMAp\\\\.env*)"
+      "Bash(ls c:\\\\Users\\\\Usuario\\\\Documents\\\\Proyectos\\\\Portafolio\\\\RutasMAp\\\\.env*)",
+      "Bash(xxd README.md)",
+      "Bash(powershell -Command ':*)"
     ]
   }
 }
