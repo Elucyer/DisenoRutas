@@ -49,7 +49,7 @@ export function MapView() {
   const containerRef = useRef<HTMLDivElement>(null)
 
   const { routes, activeRouteId, isDrawing, drawingCoords, addDrawingPoint, addDrawingPoints, drawingActivityType } = useRouteStore()
-  const { baseLayer, snapToRoad: snapEnabled, setIsSnapping, hoverDistanceKm, flyToRequest, eraserActive, eraserRadius, privacyZone } = useMapStore()
+  const { baseLayer, snapToRoad: snapEnabled, setIsSnapping, hoverDistanceKm, flyToRequest, eraserActive, eraserRadius, privacyZone, showRoutes } = useMapStore()
   const hoverMarkerRef = useRef<maplibregl.Marker | null>(null)
   const eraserCircleRef = useRef<HTMLDivElement | null>(null)
   const isDraggingRef = useRef(false)
@@ -226,9 +226,12 @@ export function MapView() {
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
-    if (map.isStyleLoaded()) renderAllRoutes(map, routes, activeRouteId, privacyZone)
-    else map.once('load', () => renderAllRoutes(map, routes, activeRouteId, privacyZone))
-  }, [routes, activeRouteId, privacyZone])
+    // Si las rutas están ocultas pero hay una activa, mostrar solo esa
+    const visibleRoutes = showRoutes ? routes : activeRouteId ? routes.filter(r => r.id === activeRouteId) : []
+    const render = () => renderAllRoutes(map, visibleRoutes, activeRouteId, privacyZone)
+    if (map.isStyleLoaded()) render()
+    else map.once('load', render)
+  }, [routes, activeRouteId, privacyZone, showRoutes])
 
   // Base layer change
   useEffect(() => {
@@ -237,7 +240,10 @@ export function MapView() {
     const style = BASE_STYLES[baseLayer]
     map.setStyle(style as string)
     map.once('styledata', () => {
-      renderAllRoutes(map, useRouteStore.getState().routes, useRouteStore.getState().activeRouteId, useMapStore.getState().privacyZone)
+      const { routes, activeRouteId } = useRouteStore.getState()
+      const { privacyZone, showRoutes } = useMapStore.getState()
+      const visibleRoutes = showRoutes ? routes : activeRouteId ? routes.filter(r => r.id === activeRouteId) : []
+      renderAllRoutes(map, visibleRoutes, activeRouteId, privacyZone)
     })
   }, [baseLayer])
 

@@ -13,7 +13,7 @@ const ACTIVITY_ICONS: Record<ActivityType, string> = {
 
 export function DrawingControls() {
   const { isDrawing, drawingCoords, drawingActivityType, startDrawing, cancelDrawing, finishDrawing, undoLastPoint } = useRouteStore()
-  const { snapToRoad, toggleSnapToRoad, isSnapping } = useMapStore()
+  const { snapToRoad, toggleSnapToRoad, isSnapping, showRoutes, toggleShowRoutes } = useMapStore()
   const [showFinishModal, setShowFinishModal] = useState(false)
   const [routeName, setRouteName] = useState('')
   const [selectedActivity, setSelectedActivity] = useState<ActivityType>('hiking')
@@ -42,6 +42,18 @@ export function DrawingControls() {
   if (!isDrawing) {
     return (
       <div className="absolute bottom-32 right-4 z-10 flex flex-col gap-2">
+        <button
+          onClick={toggleShowRoutes}
+          title={showRoutes ? 'Ocultar rutas' : 'Mostrar rutas'}
+          className={`w-full px-3 py-2 rounded-xl text-xs font-medium flex items-center gap-2 shadow-lg border transition-all backdrop-blur ${
+            showRoutes
+              ? 'bg-gray-900/90 border-white/10 text-gray-300 hover:text-white'
+              : 'bg-orange-500/20 border-orange-500/50 text-orange-400'
+          }`}
+        >
+          <span>{showRoutes ? '🙈' : '👁️'}</span>
+          <span>{showRoutes ? 'Ocultar rutas' : 'Mostrar rutas'}</span>
+        </button>
         <div className="bg-gray-900/90 backdrop-blur rounded-xl p-2 flex flex-col gap-1 shadow-lg border border-white/10">
           <p className="text-gray-400 text-xs px-2 pb-1">Dibujar ruta</p>
           {(Object.keys(ACTIVITY_LABELS) as ActivityType[]).map(type => (

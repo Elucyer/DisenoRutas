@@ -27,6 +27,7 @@ interface MapStore {
   eraserRadius: number
   editingRouteId: string | null
   privacyZone: PrivacyZone | null
+  showRoutes: boolean
 
   setBaseLayer: (layer: BaseLayer) => void
   toggleWeather: () => void
@@ -38,6 +39,7 @@ interface MapStore {
   setEraserRadius: (r: number) => void
   setEditingRouteId: (id: string | null) => void
   setPrivacyZone: (zone: PrivacyZone | null) => void
+  toggleShowRoutes: () => void
 }
 
 export const useMapStore = create<MapStore>()(
@@ -53,6 +55,7 @@ export const useMapStore = create<MapStore>()(
       eraserRadius: 150,
       editingRouteId: null,
       privacyZone: null,
+      showRoutes: true,
 
       setBaseLayer: (baseLayer) => set({ baseLayer }),
       toggleWeather: () => set(state => ({ showWeather: !state.showWeather })),
@@ -63,6 +66,7 @@ export const useMapStore = create<MapStore>()(
       setEraserRadius: (eraserRadius) => set({ eraserRadius }),
       setEditingRouteId: (editingRouteId) => set({ editingRouteId }),
       setPrivacyZone: (privacyZone) => set({ privacyZone }),
+      toggleShowRoutes: () => set(state => ({ showRoutes: !state.showRoutes })),
       requestFlyTo: (lng, lat, zoom) =>
         set(state => ({ flyToRequest: { lng, lat, zoom, id: (state.flyToRequest?.id ?? 0) + 1 } })),
     }),
