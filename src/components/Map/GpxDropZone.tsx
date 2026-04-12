@@ -9,7 +9,9 @@ export function GpxDropZone() {
   const inputRef = useRef<HTMLInputElement>(null)
 
   const processFile = useCallback((file: File) => {
-    if (!file.name.toLowerCase().endsWith('.gpx')) return
+    const nameOk = file.name.toLowerCase().endsWith('.gpx')
+    const typeOk = !file.type || file.type === 'application/gpx+xml' || file.type === 'application/xml' || file.type === 'text/xml'
+    if (!nameOk || !typeOk) return
     const reader = new FileReader()
     reader.onload = e => {
       const text = e.target?.result as string

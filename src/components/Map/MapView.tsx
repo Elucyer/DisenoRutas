@@ -7,7 +7,9 @@ import { getBounds, haversineDistance } from '../../utils/geometry'
 import { snapToRoad } from '../../services/routingService'
 import { buildElevationProfile } from '../../utils/routeMetrics'
 import { setMapInstance } from '../../services/mapInstance'
-import type { Route } from '../../types/route'
+import { useRouteEditor } from '../../hooks/useRouteEditor'
+import type { Route, Coordinate } from '../../types/route'
+import type { PrivacyZone } from '../../store/mapStore'
 
 // OpenFreeMap styles (completely free, no API key)
 // OpenTopoMap for topo, ESRI for satellite
@@ -47,10 +49,12 @@ export function MapView() {
   const containerRef = useRef<HTMLDivElement>(null)
 
   const { routes, activeRouteId, isDrawing, drawingCoords, addDrawingPoint, addDrawingPoints, drawingActivityType } = useRouteStore()
-  const { baseLayer, snapToRoad: snapEnabled, setIsSnapping, hoverDistanceKm, flyToRequest, eraserActive, eraserRadius } = useMapStore()
+  const { baseLayer, snapToRoad: snapEnabled, setIsSnapping, hoverDistanceKm, flyToRequest, eraserActive, eraserRadius, privacyZone } = useMapStore()
   const hoverMarkerRef = useRef<maplibregl.Marker | null>(null)
   const eraserCircleRef = useRef<HTMLDivElement | null>(null)
   const isDraggingRef = useRef(false)
+
+  useRouteEditor(mapRef)
 
   // Initialize map
   useEffect(() => {
@@ -89,7 +93,38 @@ export function MapView() {
     }), 'top-right')
 
     map.on('load', () => {
-      renderAllRoutes(map, routes, activeRouteId)
+      renderAllRoutes(map, routes, activeRouteId, privacyZone)
+    })
+
+    // Click on a route line → select it
+    map.on('click', (e) => {
+      if (useRouteStore.getState().isDrawing) return
+      const features = map.queryRenderedFeatures(e.point, {
+        layers: map.getStyle()?.layers
+          ?.map(l => l.id)
+          .filter(id => id.startsWith('route-line-') && !id.endsWith('-shadow')) ?? [],
+      })
+      if (features.length > 0) {
+        const routeId = features[0].properties?.routeId as string | undefined
+        if (routeId) {
+          useRouteStore.getState().setActiveRoute(routeId)
+          e.preventDefault()
+        }
+      }
+    })
+
+    // Pointer cursor on hover over route lines
+    map.on('mousemove', (e) => {
+      const { isDrawing } = useRouteStore.getState()
+      const { eraserActive } = useMapStore.getState()
+      if (isDrawing || eraserActive) return
+      const style = map.getStyle()
+      const routeLayers = style?.layers
+        ?.map(l => l.id)
+        .filter(id => id.startsWith('route-line-') && !id.endsWith('-shadow')) ?? []
+      if (routeLayers.length === 0) return
+      const features = map.queryRenderedFeatures(e.point, { layers: routeLayers })
+      map.getCanvas().style.cursor = features.length > 0 ? 'pointer' : ''
     })
 
     mapRef.current = map
@@ -191,9 +226,9 @@ export function MapView() {
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
-    if (map.isStyleLoaded()) renderAllRoutes(map, routes, activeRouteId)
-    else map.once('load', () => renderAllRoutes(map, routes, activeRouteId))
-  }, [routes, activeRouteId])
+    if (map.isStyleLoaded()) renderAllRoutes(map, routes, activeRouteId, privacyZone)
+    else map.once('load', () => renderAllRoutes(map, routes, activeRouteId, privacyZone))
+  }, [routes, activeRouteId, privacyZone])
 
   // Base layer change
   useEffect(() => {
@@ -202,7 +237,7 @@ export function MapView() {
     const style = BASE_STYLES[baseLayer]
     map.setStyle(style as string)
     map.once('styledata', () => {
-      renderAllRoutes(map, useRouteStore.getState().routes, useRouteStore.getState().activeRouteId)
+      renderAllRoutes(map, useRouteStore.getState().routes, useRouteStore.getState().activeRouteId, useMapStore.getState().privacyZone)
     })
   }, [baseLayer])
 
@@ -393,8 +428,50 @@ export function MapView() {
 }
 
 const markerSet = new Set<string>()
+const markerInstances: maplibregl.Marker[] = []
 
-function renderAllRoutes(map: maplibregl.Map, routes: Route[], activeRouteId: string | null) {
+function clearAllMarkers() {
+  markerInstances.forEach(m => m.remove())
+  markerInstances.length = 0
+  markerSet.clear()
+}
+
+// Geographic privacy zone — kept for future UI use
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function applyPrivacyZone(coords: Coordinate[], zone: { lat: number; lng: number; radiusM: number }): Coordinate[] {
+  const inZone = (c: Coordinate) => haversineDistance(c, zone) * 1000 < zone.radiusM
+
+  const startsInZone = coords.length > 0 && inZone(coords[0])
+  const endsInZone = coords.length > 0 && inZone(coords[coords.length - 1])
+
+  let start = 0
+  let end = coords.length - 1
+
+  if (startsInZone) {
+    while (start < coords.length && inZone(coords[start])) start++
+  }
+  if (endsInZone) {
+    while (end >= start && inZone(coords[end])) end--
+  }
+
+  return coords.slice(start, end + 1)
+}
+
+// Always trim the first PRIVACY_TRIM_M meters from the start of every route
+const PRIVACY_TRIM_M = 200
+
+function trimStartDistance(coords: Coordinate[], trimMeters: number): Coordinate[] {
+  let accumulated = 0
+  for (let i = 1; i < coords.length; i++) {
+    accumulated += haversineDistance(coords[i - 1], coords[i]) * 1000
+    if (accumulated >= trimMeters) return coords.slice(i)
+  }
+  return []
+}
+
+function renderAllRoutes(map: maplibregl.Map, routes: Route[], activeRouteId: string | null, _privacyZone?: PrivacyZone | null) {
+  clearAllMarkers()
+
   // Remove existing route layers/sources
   const style = map.getStyle()
   if (style?.layers) {
@@ -417,6 +494,10 @@ function renderAllRoutes(map: maplibregl.Map, routes: Route[], activeRouteId: st
     const sourceId = `route-${route.id}`
     const layerId = `route-line-${route.id}`
     const isActive = route.id === activeRouteId
+    const isDimmed = activeRouteId !== null && !isActive
+
+    const coords = trimStartDistance(route.coordinates, PRIVACY_TRIM_M)
+    if (coords.length < 2) continue
 
     if (!map.getSource(sourceId)) {
       map.addSource(sourceId, {
@@ -425,9 +506,9 @@ function renderAllRoutes(map: maplibregl.Map, routes: Route[], activeRouteId: st
           type: 'Feature',
           geometry: {
             type: 'LineString',
-            coordinates: route.coordinates.map(c => [c.lng, c.lat]),
+            coordinates: coords.map(c => [c.lng, c.lat]),
           },
-          properties: {},
+          properties: { routeId: route.id },
         },
       })
     }
@@ -437,7 +518,12 @@ function renderAllRoutes(map: maplibregl.Map, routes: Route[], activeRouteId: st
         id: `${layerId}-shadow`,
         type: 'line',
         source: sourceId,
-        paint: { 'line-color': '#000', 'line-width': isActive ? 8 : 5, 'line-opacity': 0.15, 'line-blur': 3 },
+        paint: {
+          'line-color': '#000',
+          'line-width': isActive ? 8 : 5,
+          'line-opacity': isDimmed ? 0.05 : 0.15,
+          'line-blur': 3,
+        },
       })
     }
 
@@ -449,16 +535,16 @@ function renderAllRoutes(map: maplibregl.Map, routes: Route[], activeRouteId: st
         paint: {
           'line-color': route.color,
           'line-width': isActive ? 5 : 3,
-          'line-opacity': isActive ? 1 : 0.6,
+          'line-opacity': isDimmed ? 0.25 : isActive ? 1 : 0.75,
         },
         layout: { 'line-cap': 'round', 'line-join': 'round' },
       })
     }
 
-    // Start/end markers (deduplicated)
-    if (route.coordinates.length > 0) {
-      addEmojiMarker(map, route.coordinates[0].lat, route.coordinates[0].lng, '🟢')
-      const last = route.coordinates[route.coordinates.length - 1]
+    // Show start/end markers only for active route or when no route is selected
+    if (!isDimmed && coords.length > 0) {
+      addEmojiMarker(map, coords[0].lat, coords[0].lng, '🟢')
+      const last = coords[coords.length - 1]
       addEmojiMarker(map, last.lat, last.lng, '🔴')
     }
   }
@@ -471,5 +557,6 @@ function addEmojiMarker(map: maplibregl.Map, lat: number, lng: number, emoji: st
   const el = document.createElement('div')
   el.textContent = emoji
   el.style.fontSize = '18px'
-  new maplibregl.Marker({ element: el }).setLngLat([lng, lat]).addTo(map)
+  const marker = new maplibregl.Marker({ element: el }).setLngLat([lng, lat]).addTo(map)
+  markerInstances.push(marker)
 }

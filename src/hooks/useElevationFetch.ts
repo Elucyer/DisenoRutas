@@ -15,7 +15,7 @@ async function loadElevation(routeId: string) {
     const hasData = withElevation.some(c => (c.elevation ?? 0) !== 0)
     if (hasData) {
       fetchedIds.add(routeId)
-      useRouteStore.getState().updateRouteCoords(routeId, withElevation)
+      useRouteStore.getState().updateRouteCoords(routeId, withElevation, true)
     }
   } catch (e) {
     console.error('Elevation fetch failed', e)

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useCallback } from 'react'
+import { useMemo, useRef, useCallback, useEffect } from 'react'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine,
 } from 'recharts'
@@ -29,11 +29,44 @@ function CustomTooltip({ active, payload }: TooltipProps) {
   )
 }
 
-export function ElevationBar() {
+const MIN_HEIGHT = 120
+const MAX_HEIGHT = 500
+
+interface ElevationBarProps {
+  height: number
+  onHeightChange: (h: number) => void
+}
+
+export function ElevationBar({ height, onHeightChange }: ElevationBarProps) {
   const { routes, activeRouteId, elevationLoadingId, snappingRouteId, snappingProgress, setSnappingRoute, saveRoute } = useRouteStore()
-  const { hoverDistanceKm, setHoverDistance, requestFlyTo, eraserActive, toggleEraser, eraserRadius, setEraserRadius } = useMapStore()
-  // Keep last hovered point in a ref so click always has access to it
+  const { hoverDistanceKm, setHoverDistance, requestFlyTo, eraserActive, toggleEraser, eraserRadius, setEraserRadius, editingRouteId, setEditingRouteId } = useMapStore()
   const hoveredPoint = useRef<ElevationPoint | null>(null)
+  const dragStartY = useRef<number | null>(null)
+  const dragStartH = useRef<number>(height)
+
+  const onDragStart = (e: React.MouseEvent) => {
+    dragStartY.current = e.clientY
+    dragStartH.current = height
+    document.body.style.cursor = 'ns-resize'
+    document.body.style.userSelect = 'none'
+  }
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (dragStartY.current === null) return
+      const delta = dragStartY.current - e.clientY
+      const next = Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, dragStartH.current + delta))
+      onHeightChange(next)
+    }
+    const onUp = () => {
+      dragStartY.current = null
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
+  }, [onHeightChange])
 
   const activeRoute = routes.find(r => r.id === activeRouteId)
   const isLoading = elevationLoadingId === activeRouteId
@@ -87,7 +120,18 @@ export function ElevationBar() {
   const m = activeRoute.metrics
 
   return (
-    <div className="absolute bottom-0 left-0 right-0 z-10 bg-gray-950/95 backdrop-blur border-t border-white/10 shadow-2xl">
+    <div
+      className="absolute bottom-0 left-0 right-0 z-10 bg-gray-950/95 backdrop-blur border-t border-white/10 shadow-2xl flex flex-col"
+      style={{ height }}
+    >
+      {/* Drag handle */}
+      <div
+        onMouseDown={onDragStart}
+        className="flex-shrink-0 flex items-center justify-center h-3 cursor-ns-resize group"
+      >
+        <div className="w-10 h-1 rounded-full bg-white/10 group-hover:bg-orange-500/50 transition-colors" />
+      </div>
+
       {/* Stats row */}
       <div className="flex items-center gap-4 px-4 pt-2 pb-1 border-b border-white/5">
         <div className="flex items-center gap-1.5">
@@ -108,6 +152,20 @@ export function ElevationBar() {
               <Stat label="⏱️" value={formatTime(m.estimatedTime)} />
             </>
           )}
+          {/* Edit route button */}
+          <button
+            onClick={() => setEditingRouteId(editingRouteId === activeRouteId ? null : (activeRouteId ?? null))}
+            title="Editar ruta manualmente"
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-all ${
+              editingRouteId === activeRouteId
+                ? 'border-green-500/60 bg-green-500/15 text-green-400'
+                : 'border-white/10 text-gray-400 hover:text-green-400 hover:border-green-500/40 hover:bg-green-500/10'
+            }`}
+          >
+            <span>✏️</span>
+            <span>{editingRouteId === activeRouteId ? 'Editando' : 'Editar'}</span>
+          </button>
+
           {/* Eraser tool */}
           <div className="flex items-center gap-1">
             <button
@@ -178,7 +236,7 @@ export function ElevationBar() {
       </div>
 
       {/* Chart area */}
-      <div className="h-24 px-2 py-1" onMouseLeave={() => setHoverDistance(null)}>
+      <div className="flex-1 min-h-0 px-2 py-1" onMouseLeave={() => setHoverDistance(null)}>
         {isLoading ? (
           <div className="h-full flex items-center justify-center gap-2">
             <div className="w-4 h-4 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />

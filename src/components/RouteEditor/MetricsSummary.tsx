@@ -4,6 +4,13 @@ import { calculateMetrics } from '../../utils/routeMetrics'
 import type { Route } from '../../types/route'
 import { DIFFICULTY_LABELS, DIFFICULTY_COLORS, ACTIVITY_LABELS, formatTime } from '../../utils/routeMetrics'
 
+function formatPace(minutes: number, distanceKm: number): string {
+  const paceMinKm = minutes / distanceKm
+  const m = Math.floor(paceMinKm)
+  const s = Math.round((paceMinKm - m) * 60)
+  return `${m}:${s.toString().padStart(2, '0')} /km`
+}
+
 interface Props {
   route: Route
 }
@@ -42,6 +49,11 @@ export function MetricsSummary({ route }: Props) {
         <div>
           <p className="text-white font-semibold text-sm leading-tight">{route.name}</p>
           <p className="text-gray-500 text-xs">{ACTIVITY_LABELS[route.activityType]}</p>
+          {route.createdAt && (
+            <p className="text-gray-600 text-[10px]">
+              {new Date(route.createdAt).toLocaleDateString('es', { day: '2-digit', month: 'short', year: 'numeric' })}
+            </p>
+          )}
         </div>
         {m && (
           <span
@@ -56,11 +68,16 @@ export function MetricsSummary({ route }: Props) {
       {m && (
         <div className="grid grid-cols-2 gap-2">
           <Stat icon="📏" label="Distancia" value={`${m.distance} km`} />
-          <Stat icon="⏱️" label="Tiempo est." value={formatTime(m.estimatedTime)} />
+          <Stat icon="⏱️" label={route.description?.startsWith('strava:') ? 'Tiempo real' : 'Tiempo est.'} value={formatTime(m.estimatedTime)} />
           <Stat icon="⬆️" label="Desnivel +" value={`${m.elevationGain} m`} />
           <Stat icon="⬇️" label="Desnivel -" value={`${m.elevationLoss} m`} />
           <Stat icon="🏔️" label="Máx. altitud" value={`${m.elevationMax} m`} />
           <Stat icon="🔥" label="Kcal" value={`~${m.kcal}`} />
+          {m.distance > 0 && m.estimatedTime > 0 && (
+            route.activityType === 'cycling'
+              ? <Stat icon="⚡" label="Velocidad" value={`${(m.distance / (m.estimatedTime / 60)).toFixed(1)} km/h`} />
+              : <Stat icon="⚡" label="Ritmo" value={formatPace(m.estimatedTime, m.distance)} />
+          )}
         </div>
       )}
 

@@ -1,4 +1,11 @@
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
+
+export interface PrivacyZone {
+  lat: number
+  lng: number
+  radiusM: number  // meters
+}
 
 export type BaseLayer = 'liberty' | 'bright' | 'topo' | 'satellite'
 
@@ -19,6 +26,7 @@ interface MapStore {
   eraserActive: boolean
   eraserRadius: number
   editingRouteId: string | null
+  privacyZone: PrivacyZone | null
 
   setBaseLayer: (layer: BaseLayer) => void
   toggleWeather: () => void
@@ -29,27 +37,35 @@ interface MapStore {
   toggleEraser: () => void
   setEraserRadius: (r: number) => void
   setEditingRouteId: (id: string | null) => void
+  setPrivacyZone: (zone: PrivacyZone | null) => void
 }
 
-export const useMapStore = create<MapStore>()(set => ({
-  baseLayer: 'liberty',
-  showWeather: false,
-  hoverDistanceKm: null,
-  snapToRoad: false,
-  isSnapping: false,
-  flyToRequest: null,
-  eraserActive: false,
-  eraserRadius: 150,
-  editingRouteId: null,
+export const useMapStore = create<MapStore>()(
+  persist(
+    set => ({
+      baseLayer: 'liberty',
+      showWeather: false,
+      hoverDistanceKm: null,
+      snapToRoad: false,
+      isSnapping: false,
+      flyToRequest: null,
+      eraserActive: false,
+      eraserRadius: 150,
+      editingRouteId: null,
+      privacyZone: null,
 
-  setBaseLayer: (baseLayer) => set({ baseLayer }),
-  toggleWeather: () => set(state => ({ showWeather: !state.showWeather })),
-  setHoverDistance: (hoverDistanceKm) => set({ hoverDistanceKm }),
-  toggleSnapToRoad: () => set(state => ({ snapToRoad: !state.snapToRoad })),
-  setIsSnapping: (isSnapping) => set({ isSnapping }),
-  toggleEraser: () => set(state => ({ eraserActive: !state.eraserActive })),
-  setEraserRadius: (eraserRadius) => set({ eraserRadius }),
-  setEditingRouteId: (editingRouteId) => set({ editingRouteId }),
-  requestFlyTo: (lng, lat, zoom) =>
-    set(state => ({ flyToRequest: { lng, lat, zoom, id: (state.flyToRequest?.id ?? 0) + 1 } })),
-}))
+      setBaseLayer: (baseLayer) => set({ baseLayer }),
+      toggleWeather: () => set(state => ({ showWeather: !state.showWeather })),
+      setHoverDistance: (hoverDistanceKm) => set({ hoverDistanceKm }),
+      toggleSnapToRoad: () => set(state => ({ snapToRoad: !state.snapToRoad })),
+      setIsSnapping: (isSnapping) => set({ isSnapping }),
+      toggleEraser: () => set(state => ({ eraserActive: !state.eraserActive })),
+      setEraserRadius: (eraserRadius) => set({ eraserRadius }),
+      setEditingRouteId: (editingRouteId) => set({ editingRouteId }),
+      setPrivacyZone: (privacyZone) => set({ privacyZone }),
+      requestFlyTo: (lng, lat, zoom) =>
+        set(state => ({ flyToRequest: { lng, lat, zoom, id: (state.flyToRequest?.id ?? 0) + 1 } })),
+    }),
+    { name: 'rutasmap-settings', partialize: (s) => ({ privacyZone: s.privacyZone }) }
+  )
+)

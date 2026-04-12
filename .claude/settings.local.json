@@ -5,7 +5,9 @@
       "Bash(npm install:*)",
       "Bash(npx tsc:*)",
       "Bash(npm run:*)",
-      "Bash(npm uninstall:*)"
+      "Bash(npm uninstall:*)",
+      "Bash(grep -n \"fetch\\\\|innerHTML\\\\|dangerouslySetInnerHTML\" /c/Users/Usuario/Documents/Proyectos/Portafolio/RutasMAp/src/components/**/*.tsx)",
+      "Bash(ls c:\\\\Users\\\\Usuario\\\\Documents\\\\Proyectos\\\\Portafolio\\\\RutasMAp\\\\.env*)"
     ]
   }
 }

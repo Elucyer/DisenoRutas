@@ -40,19 +40,44 @@ export function parseGPX(gpxText: string): Partial<Route> {
     type: 'poi' as const,
   }))
 
+  // Detect activity type from GPX type/keywords
+  const typeText = (doc.querySelector('trk > type')?.textContent ?? '').toLowerCase()
+  const nameLower = name.toLowerCase()
+  let activityType: ActivityType = 'hiking'
+  if (typeText.includes('run') || typeText.includes('trail') || nameLower.includes('run') || nameLower.includes('carrera') || nameLower.includes('maraton')) {
+    activityType = 'running'
+  } else if (typeText.includes('ride') || typeText.includes('cycl') || typeText.includes('bike') || nameLower.includes('cicl') || nameLower.includes('bici')) {
+    activityType = 'cycling'
+  }
+
+  // Try to get the original date from GPX metadata
+  const timeText = doc.querySelector('metadata > time')?.textContent ?? doc.querySelector('trkpt > time')?.textContent
+  const createdAt = timeText ? new Date(timeText).getTime() : Date.now()
+
   return {
     id: nanoid(),
     name,
-    activityType: 'hiking' as ActivityType,
+    activityType,
     coordinates,
     waypoints,
     color: randomRouteColor(),
     tags: [],
-    createdAt: Date.now(),
+    createdAt,
   }
 }
 
+function escapeXml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+}
+
 export function exportGPX(route: Route): string {
+  const safeName = escapeXml(route.name)
+  const safeType = escapeXml(route.activityType)
   const pts = route.coordinates.map(c => {
     const ele = c.elevation != null ? `\n        <ele>${c.elevation}</ele>` : ''
     return `    <trkpt lat="${c.lat}" lon="${c.lng}">${ele}\n    </trkpt>`
@@ -61,12 +86,12 @@ export function exportGPX(route: Route): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="RutasMap" xmlns="http://www.topografix.com/GPX/1/1">
   <metadata>
-    <name>${route.name}</name>
+    <name>${safeName}</name>
     <time>${new Date(route.createdAt).toISOString()}</time>
   </metadata>
   <trk>
-    <name>${route.name}</name>
-    <type>${route.activityType}</type>
+    <name>${safeName}</name>
+    <type>${safeType}</type>
     <trkseg>
 ${pts}
     </trkseg>
