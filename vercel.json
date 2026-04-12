@@ -12,7 +12,7 @@
     "api/notes/[id].ts": { "maxDuration": 10 },
     "api/auth/strava.ts": { "maxDuration": 10 },
     "api/auth/callback.ts": { "maxDuration": 15 },
-    "api/auth/me.ts": { "maxDuration": 10 },
+    "api/auth/me.ts": { "maxDuration": 10 }
   },
   "headers": [
     {
