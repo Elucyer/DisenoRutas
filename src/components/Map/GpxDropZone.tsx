@@ -2,10 +2,14 @@ import { useCallback, useRef } from 'react'
 import { parseGPX } from '../../utils/gpxParser'
 import { calculateMetrics } from '../../utils/routeMetrics'
 import { useRouteStore } from '../../store/routeStore'
+import { useAuthStore } from '../../store/authStore'
+import { useAuthModalStore } from '../../store/authModalStore'
 import type { Route } from '../../types/route'
 
 export function GpxDropZone() {
   const { saveRoute } = useRouteStore()
+  const user = useAuthStore(s => s.user)
+  const showAuthModal = useAuthModalStore(s => s.show)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const processFile = useCallback((file: File) => {
@@ -36,8 +40,9 @@ export function GpxDropZone() {
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
+    if (!user) { showAuthModal(); return }
     Array.from(e.dataTransfer.files).forEach(processFile)
-  }, [processFile])
+  }, [processFile, user, showAuthModal])
 
   return (
     <div
@@ -54,7 +59,7 @@ export function GpxDropZone() {
         onChange={e => Array.from(e.target.files ?? []).forEach(processFile)}
       />
       <button
-        onClick={() => inputRef.current?.click()}
+        onClick={() => { if (!user) { showAuthModal(); return } inputRef.current?.click() }}
         className="bg-gray-900/90 backdrop-blur border border-white/10 hover:border-orange-500/50 rounded-xl px-4 py-2 text-gray-400 hover:text-orange-400 text-xs font-medium transition-all flex items-center gap-2 shadow-lg"
       >
         <span>📂</span>

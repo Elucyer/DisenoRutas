@@ -7,6 +7,9 @@ import { RouteSidebar } from './components/RouteEditor/RouteSidebar'
 import { ElevationBar } from './components/ElevationProfile/ElevationBar'
 import { useRouteStore } from './store/routeStore'
 import { useElevationFetch } from './hooks/useElevationFetch'
+import { useAuthStore } from './store/authStore'
+import { useAuthModalStore } from './store/authModalStore'
+import { AuthModal } from './components/Auth/AuthModal'
 
 const MIN_SIDEBAR = 220
 const MAX_SIDEBAR = 520
@@ -14,12 +17,34 @@ const MAX_SIDEBAR = 520
 export default function App() {
   const activeRouteId = useRouteStore(s => s.activeRouteId)
   const loadRoutes = useRouteStore(s => s.loadRoutes)
+  const authModalOpen = useAuthModalStore(s => s.open)
   const [elevationHeight, setElevationHeight] = useState(180)
   const [sidebarWidth, setSidebarWidth] = useState(288)
   const sidebarDragStart = useRef<{ x: number; w: number } | null>(null)
   useElevationFetch()
 
-  useEffect(() => { loadRoutes() }, [loadRoutes])
+  useEffect(() => {
+    // Handle auth token from Strava OAuth redirect
+    const params = new URLSearchParams(window.location.search)
+    const token = params.get('token')
+    const authError = params.get('auth_error')
+    if (token) {
+      useAuthStore.getState().login(token)
+      window.history.replaceState({}, '', window.location.pathname)
+    } else if (authError) {
+      console.warn('Auth error:', authError)
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+
+    loadRoutes().then(() => {
+      const p = new URLSearchParams(window.location.search)
+      const sharedRoute = p.get('route')
+      if (sharedRoute) {
+        useRouteStore.getState().setActiveRoute(sharedRoute)
+        window.history.replaceState({}, '', window.location.pathname)
+      }
+    })
+  }, [loadRoutes])
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
@@ -39,6 +64,7 @@ export default function App() {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden">
+      {authModalOpen && <AuthModal />}
       {/* Sidebar */}
       <div className="relative flex-shrink-0 flex flex-col z-20 shadow-2xl" style={{ width: sidebarWidth }}>
         <RouteSidebar />

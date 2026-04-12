@@ -3,19 +3,23 @@ import type { Route, Coordinate, ActivityType } from '../types/route'
 import { nanoid } from '../utils/nanoid'
 import { randomRouteColor } from '../utils/gpxParser'
 import { calculateMetrics } from '../utils/routeMetrics'
+import { authHeader } from './authStore'
 
 const API = import.meta.env.DEV ? '/strava-api' : ''
 
 async function apiSaveRoute(route: Route) {
   await fetch(`${API}/api/routes`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeader() },
     body: JSON.stringify(route),
   })
 }
 
 async function apiDeleteRoute(id: string) {
-  await fetch(`${API}/api/routes/${id}`, { method: 'DELETE' })
+  await fetch(`${API}/api/routes/${id}`, {
+    method: 'DELETE',
+    headers: authHeader(),
+  })
 }
 
 export async function fetchRoutesFromDB(): Promise<Route[]> {

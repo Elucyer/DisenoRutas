@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
-import { fetchStravaActivities, checkStravaConnected, stravaActivityToRoute, deduplicateActivities, type StravaActivity } from '../../services/stravaService'
+import { fetchStravaActivities, checkStravaConnected, fetchUserStravaActivities, stravaActivityToRoute, deduplicateActivities, type StravaActivity } from '../../services/stravaService'
 import { useRouteStore } from '../../store/routeStore'
+import { useAuthStore } from '../../store/authStore'
 import { calculateMetrics } from '../../utils/routeMetrics'
 import { randomRouteColor } from '../../utils/gpxParser'
 import { nanoid } from '../../utils/nanoid'
@@ -32,6 +33,7 @@ const SPORT_ICON: Record<string, string> = {
 
 export function StravaImportPanel({ onClose }: Props) {
   const { routes, saveRoute, setActiveRoute } = useRouteStore()
+  const user = useAuthStore(s => s.user)
   const [connected, setConnected] = useState<boolean | null>(null)
   const [activities, setActivities] = useState<StravaActivity[]>([])
   const [loading, setLoading] = useState(true)
@@ -54,19 +56,27 @@ export function StravaImportPanel({ onClose }: Props) {
       setLoading(true)
       setError(null)
       try {
-        const ok = await checkStravaConnected()
-        setConnected(ok)
-        if (!ok) { setLoading(false); return }
-        const data = await fetchStravaActivities()
-        setActivities(data)
+        if (user) {
+          // Logged in: fetch this user's own Strava activities directly
+          setConnected(true)
+          const data = await fetchUserStravaActivities()
+          setActivities(data)
+        } else {
+          // Not logged in: use shared DB cache
+          const ok = await checkStravaConnected()
+          setConnected(ok)
+          if (!ok) { setLoading(false); return }
+          const data = await fetchStravaActivities()
+          setActivities(data)
+        }
       } catch (e) {
-        setError('No se pudo conectar al servidor de Strava (localhost:3001)')
+        setError(user ? 'No se pudo cargar tus actividades de Strava. Vuelve a conectar.' : 'No se pudo conectar al servidor de Strava')
       } finally {
         setLoading(false)
       }
     }
     load()
-  }, [])
+  }, [user])
 
   async function handleImport(activity: StravaActivity) {
     if (importing.has(activity.id)) return

@@ -6,7 +6,13 @@
     "api/routes.ts": { "maxDuration": 10 },
     "api/routes/[id].ts": { "maxDuration": 10 },
     "api/strava/routes.ts": { "maxDuration": 10 },
-    "api/strava/status.ts": { "maxDuration": 10 }
+    "api/strava/status.ts": { "maxDuration": 10 },
+    "api/strava/user-activities.ts": { "maxDuration": 15 },
+    "api/notes.ts": { "maxDuration": 10 },
+    "api/notes/[id].ts": { "maxDuration": 10 },
+    "api/auth/strava.ts": { "maxDuration": 10 },
+    "api/auth/callback.ts": { "maxDuration": 15 },
+    "api/auth/me.ts": { "maxDuration": 10 },
   },
   "headers": [
     {

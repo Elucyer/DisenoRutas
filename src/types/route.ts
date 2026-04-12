@@ -37,6 +37,7 @@ export interface Route {
   color: string
   description?: string
   tags: string[]
+  userId?: string | null
 }
 
 export interface ElevationPoint {

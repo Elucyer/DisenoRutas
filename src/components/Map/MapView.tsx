@@ -1,15 +1,18 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, useState } from 'react'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { useRouteStore } from '../../store/routeStore'
 import { useMapStore } from '../../store/mapStore'
+import { useNoteStore } from '../../store/noteStore'
 import { getBounds, haversineDistance } from '../../utils/geometry'
 import { snapToRoad } from '../../services/routingService'
 import { buildElevationProfile } from '../../utils/routeMetrics'
 import { setMapInstance } from '../../services/mapInstance'
 import { useRouteEditor } from '../../hooks/useRouteEditor'
+import { AddNoteModal, ViewNoteModal } from './NoteModal'
 import type { Route, Coordinate } from '../../types/route'
 import type { PrivacyZone } from '../../store/mapStore'
+import type { WaypointNote } from '../../types/note'
 
 // OpenFreeMap styles (completely free, no API key)
 // OpenTopoMap for topo, ESRI for satellite
@@ -49,7 +52,11 @@ export function MapView() {
   const containerRef = useRef<HTMLDivElement>(null)
 
   const { routes, activeRouteId, isDrawing, drawingCoords, addDrawingPoint, addDrawingPoints, drawingActivityType } = useRouteStore()
-  const { baseLayer, snapToRoad: snapEnabled, setIsSnapping, hoverDistanceKm, flyToRequest, eraserActive, eraserRadius, privacyZone, showRoutes } = useMapStore()
+  const { baseLayer, snapToRoad: snapEnabled, setIsSnapping, hoverDistanceKm, flyToRequest, eraserActive, eraserRadius, privacyZone, showRoutes, addingNote, toggleAddingNote } = useMapStore()
+  const { notes } = useNoteStore()
+  const [pendingNote, setPendingNote] = useState<{ lat: number; lng: number } | null>(null)
+  const [viewNote, setViewNote] = useState<WaypointNote | null>(null)
+  const noteMarkersRef = useRef<maplibregl.Marker[]>([])
   const hoverMarkerRef = useRef<maplibregl.Marker | null>(null)
   const eraserCircleRef = useRef<HTMLDivElement | null>(null)
   const isDraggingRef = useRef(false)
@@ -96,8 +103,14 @@ export function MapView() {
       renderAllRoutes(map, routes, activeRouteId, privacyZone)
     })
 
-    // Click on a route line → select it
+    // Click handler: note placement OR route selection
     map.on('click', (e) => {
+      const { addingNote } = useMapStore.getState()
+      if (addingNote) {
+        setPendingNote({ lat: e.lngLat.lat, lng: e.lngLat.lng })
+        useMapStore.getState().toggleAddingNote()
+        return
+      }
       if (useRouteStore.getState().isDrawing) return
       const features = map.queryRenderedFeatures(e.point, {
         layers: map.getStyle()?.layers
@@ -430,7 +443,48 @@ export function MapView() {
     }
   }, [eraserActive, eraserRadius])
 
-  return <div ref={containerRef} className="w-full h-full" />
+  // Note markers
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    noteMarkersRef.current.forEach(m => m.remove())
+    noteMarkersRef.current = []
+    notes.forEach(note => {
+      const el = document.createElement('div')
+      el.style.cssText = 'width:22px;height:22px;background:#f97316;border:2px solid #fff;border-radius:50% 50% 50% 0;transform:rotate(-45deg);cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,0.4)'
+      el.title = note.comment || 'Nota'
+      const marker = new maplibregl.Marker({ element: el, anchor: 'bottom-left' })
+        .setLngLat([note.lng, note.lat])
+        .addTo(map)
+      el.addEventListener('click', (e) => { e.stopPropagation(); setViewNote(note) })
+      noteMarkersRef.current.push(marker)
+    })
+    return () => { noteMarkersRef.current.forEach(m => m.remove()); noteMarkersRef.current = [] }
+  }, [notes])
+
+  // Cursor in addingNote mode
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    map.getCanvas().style.cursor = addingNote ? 'crosshair' : ''
+  }, [addingNote])
+
+  return (
+    <div className="relative w-full h-full">
+      <div ref={containerRef} className="w-full h-full" />
+      {pendingNote && activeRouteId && (
+        <AddNoteModal
+          routeId={activeRouteId}
+          lat={pendingNote.lat}
+          lng={pendingNote.lng}
+          onClose={() => setPendingNote(null)}
+        />
+      )}
+      {viewNote && (
+        <ViewNoteModal note={viewNote} onClose={() => setViewNote(null)} />
+      )}
+    </div>
+  )
 }
 
 const markerSet = new Set<string>()
@@ -478,18 +532,20 @@ function trimStartDistance(coords: Coordinate[], trimMeters: number): Coordinate
 function renderAllRoutes(map: maplibregl.Map, routes: Route[], activeRouteId: string | null, _privacyZone?: PrivacyZone | null) {
   clearAllMarkers()
 
+  const startPoints: { lng: number; lat: number; color: string; routeId: string }[] = []
+
   // Remove existing route layers/sources
   const style = map.getStyle()
   if (style?.layers) {
     for (const layer of style.layers) {
-      if (typeof layer.id === 'string' && layer.id.startsWith('route-')) {
+      if (typeof layer.id === 'string' && (layer.id.startsWith('route-') || layer.id.startsWith('note-'))) {
         if (map.getLayer(layer.id)) map.removeLayer(layer.id)
       }
     }
   }
   if (style?.sources) {
     for (const key of Object.keys(style.sources)) {
-      if (key.startsWith('route-')) {
+      if (key.startsWith('route-') || key.startsWith('note-')) {
         if (map.getSource(key)) map.removeSource(key)
       }
     }
@@ -547,22 +603,99 @@ function renderAllRoutes(map: maplibregl.Map, routes: Route[], activeRouteId: st
       })
     }
 
-    // Show start/end markers only for active route or when no route is selected
-    if (!isDimmed && coords.length > 0) {
-      addEmojiMarker(map, coords[0].lat, coords[0].lng, '🟢')
+    // Collect start point for cluster source
+    if (!isDimmed) startPoints.push({ lng: coords[0].lng, lat: coords[0].lat, color: route.color, routeId: route.id })
+    // End marker only for active route
+    if (isActive && coords.length > 0) {
       const last = coords[coords.length - 1]
-      addEmojiMarker(map, last.lat, last.lng, '🔴')
+      addDotMarker(map, last.lat, last.lng, '#ef4444')
     }
   }
+
+  // Render start points: cluster when no active route, single marker when active
+  renderStartMarkers(map, startPoints, activeRouteId)
 }
 
-function addEmojiMarker(map: maplibregl.Map, lat: number, lng: number, emoji: string) {
+function addDotMarker(map: maplibregl.Map, lat: number, lng: number, color: string) {
   const key = `${lat.toFixed(5)},${lng.toFixed(5)}`
   if (markerSet.has(key)) return
   markerSet.add(key)
   const el = document.createElement('div')
-  el.textContent = emoji
-  el.style.fontSize = '18px'
-  const marker = new maplibregl.Marker({ element: el }).setLngLat([lng, lat]).addTo(map)
+  el.style.cssText = `width:12px;height:12px;background:${color};border:2px solid #fff;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,0.5)`
+  const marker = new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat([lng, lat]).addTo(map)
   markerInstances.push(marker)
+}
+
+function renderStartMarkers(
+  map: maplibregl.Map,
+  points: { lng: number; lat: number; color: string; routeId: string }[],
+  activeRouteId: string | null
+) {
+  // Clean up old cluster layers/source
+  ;['route-starts-clusters', 'route-starts-count', 'route-starts-single'].forEach(id => {
+    if (map.getLayer(id)) map.removeLayer(id)
+  })
+  if (map.getSource('route-starts')) map.removeSource('route-starts')
+
+  if (points.length === 0) return
+
+  if (activeRouteId) {
+    // Single active route — show a clean start dot marker
+    const pt = points.find(p => p.routeId === activeRouteId) ?? points[0]
+    addDotMarker(map, pt.lat, pt.lng, '#22c55e')
+    return
+  }
+
+  // Multiple routes — use cluster source
+  map.addSource('route-starts', {
+    type: 'geojson',
+    cluster: true,
+    clusterMaxZoom: 13,
+    clusterRadius: 40,
+    data: {
+      type: 'FeatureCollection',
+      features: points.map(p => ({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [p.lng, p.lat] },
+        properties: { routeId: p.routeId, color: p.color },
+      })),
+    },
+  })
+
+  map.addLayer({
+    id: 'route-starts-clusters',
+    type: 'circle',
+    source: 'route-starts',
+    filter: ['has', 'point_count'],
+    paint: {
+      'circle-color': '#f97316',
+      'circle-radius': ['step', ['get', 'point_count'], 14, 5, 18, 20, 22],
+      'circle-opacity': 0.9,
+      'circle-stroke-width': 2,
+      'circle-stroke-color': '#fff',
+    },
+  })
+
+  map.addLayer({
+    id: 'route-starts-count',
+    type: 'symbol',
+    source: 'route-starts',
+    filter: ['has', 'point_count'],
+    layout: { 'text-field': '{point_count_abbreviated}', 'text-size': 11, 'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'] },
+    paint: { 'text-color': '#fff' },
+  })
+
+  map.addLayer({
+    id: 'route-starts-single',
+    type: 'circle',
+    source: 'route-starts',
+    filter: ['!', ['has', 'point_count']],
+    paint: {
+      'circle-color': ['get', 'color'],
+      'circle-radius': 6,
+      'circle-stroke-width': 2,
+      'circle-stroke-color': '#fff',
+      'circle-opacity': 0.9,
+    },
+  })
 }

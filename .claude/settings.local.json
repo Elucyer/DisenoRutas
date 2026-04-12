@@ -9,7 +9,9 @@
       "Bash(grep -n \"fetch\\\\|innerHTML\\\\|dangerouslySetInnerHTML\" /c/Users/Usuario/Documents/Proyectos/Portafolio/RutasMAp/src/components/**/*.tsx)",
       "Bash(ls c:\\\\Users\\\\Usuario\\\\Documents\\\\Proyectos\\\\Portafolio\\\\RutasMAp\\\\.env*)",
       "Bash(xxd README.md)",
-      "Bash(powershell -Command ':*)"
+      "Bash(powershell -Command ':*)",
+      "Read(//c/Users/Usuario/Documents/Proyaectos/Portafolio/RutasMAp/src/components/RouteEditor/**)",
+      "Bash(sed -n '405,415p' c:/Users/Usuario/Documents/Proyectos/Portafolio/RutasMAp/src/components/RouteEditor/RouteSidebar.tsx)"
     ]
   }
 }

@@ -28,6 +28,7 @@ interface MapStore {
   editingRouteId: string | null
   privacyZone: PrivacyZone | null
   showRoutes: boolean
+  addingNote: boolean
 
   setBaseLayer: (layer: BaseLayer) => void
   toggleWeather: () => void
@@ -40,6 +41,7 @@ interface MapStore {
   setEditingRouteId: (id: string | null) => void
   setPrivacyZone: (zone: PrivacyZone | null) => void
   toggleShowRoutes: () => void
+  toggleAddingNote: () => void
 }
 
 export const useMapStore = create<MapStore>()(
@@ -56,6 +58,7 @@ export const useMapStore = create<MapStore>()(
       editingRouteId: null,
       privacyZone: null,
       showRoutes: true,
+      addingNote: false,
 
       setBaseLayer: (baseLayer) => set({ baseLayer }),
       toggleWeather: () => set(state => ({ showWeather: !state.showWeather })),
@@ -67,6 +70,7 @@ export const useMapStore = create<MapStore>()(
       setEditingRouteId: (editingRouteId) => set({ editingRouteId }),
       setPrivacyZone: (privacyZone) => set({ privacyZone }),
       toggleShowRoutes: () => set(state => ({ showRoutes: !state.showRoutes })),
+      toggleAddingNote: () => set(state => ({ addingNote: !state.addingNote })),
       requestFlyTo: (lng, lat, zoom) =>
         set(state => ({ flyToRequest: { lng, lat, zoom, id: (state.flyToRequest?.id ?? 0) + 1 } })),
     }),
