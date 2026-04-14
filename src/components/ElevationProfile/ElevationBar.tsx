@@ -1,4 +1,4 @@
-import { useMemo, useRef, useCallback, useEffect } from 'react'
+import { useMemo, useRef, useCallback, useEffect, useState } from 'react'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine,
 } from 'recharts'
@@ -8,6 +8,7 @@ import { buildElevationProfile, gradientColor, formatTime, ACTIVITY_LABELS } fro
 import { refreshElevationForRoute } from '../../hooks/useElevationFetch'
 import { snapRouteToRoad } from '../../services/routingService'
 import { calculateMetrics } from '../../utils/routeMetrics'
+import { useIsMobile } from '../../hooks/useIsMobile'
 import type { ElevationPoint, Route } from '../../types/route'
 
 interface TooltipProps {
@@ -40,6 +41,8 @@ interface ElevationBarProps {
 export function ElevationBar({ height, onHeightChange }: ElevationBarProps) {
   const { routes, activeRouteId, elevationLoadingId, snappingRouteId, snappingProgress, setSnappingRoute, saveRoute } = useRouteStore()
   const { hoverDistanceKm, setHoverDistance, requestFlyTo, eraserActive, toggleEraser, eraserRadius, setEraserRadius, editingRouteId, setEditingRouteId } = useMapStore()
+  const isMobile = useIsMobile()
+  const [showMobileTools, setShowMobileTools] = useState(false)
   const hoveredPoint = useRef<ElevationPoint | null>(null)
   const dragStartY = useRef<number | null>(null)
   const dragStartH = useRef<number>(height)
@@ -118,6 +121,186 @@ export function ElevationBar({ height, onHeightChange }: ElevationBarProps) {
 
   const hasElevation = profile.some(p => p.elevation > 0)
   const m = activeRoute.metrics
+  const activityIcon = activeRoute.activityType === 'running' ? '🏃' : activeRoute.activityType === 'cycling' ? '🚵' : '🥾'
+
+  const chart = (
+    <div className="flex-1 min-h-0 px-2 py-1" onMouseLeave={() => setHoverDistance(null)}>
+      {isLoading ? (
+        <div className="h-full flex items-center justify-center gap-2">
+          <div className="w-4 h-4 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+          <span className="text-gray-500 text-xs">Cargando altimetria...</span>
+        </div>
+      ) : !hasElevation ? (
+        <div className="h-full flex items-center justify-center gap-3">
+          <span className="text-gray-600 text-xs">Sin datos de elevacion</span>
+          <button
+            onClick={() => refreshElevationForRoute(activeRoute.id)}
+            className="px-3 py-1 rounded-lg text-xs bg-orange-500/20 text-orange-400 border border-orange-500/30 hover:bg-orange-500/30 transition-all"
+          >
+            🔄 Cargar
+          </button>
+        </div>
+      ) : (
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart
+            data={profile}
+            margin={{ top: 4, right: 8, bottom: 0, left: 0 }}
+            style={{ cursor: 'crosshair' }}
+            onMouseMove={handleChartMouseMove}
+            onMouseLeave={() => setHoverDistance(null)}
+            onClick={handleChartClick}
+          >
+            <defs>
+              <linearGradient id="elevGradBar" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%"  stopColor="#f97316" stopOpacity={0.5} />
+                <stop offset="95%" stopColor="#f97316" stopOpacity={0.05} />
+              </linearGradient>
+            </defs>
+            <XAxis
+              dataKey="distance"
+              tickFormatter={v => `${(v as number).toFixed(1)}km`}
+              tick={{ fill: '#4b5563', fontSize: 9 }}
+              axisLine={false}
+              tickLine={false}
+            />
+            <YAxis
+              domain={['auto', 'auto']}
+              tickFormatter={v => `${v}m`}
+              tick={{ fill: '#4b5563', fontSize: 9 }}
+              axisLine={false}
+              tickLine={false}
+              width={40}
+            />
+            <Tooltip content={<CustomTooltip />} />
+            {hoverDistanceKm != null && (
+              <ReferenceLine x={hoverDistanceKm} stroke="#f97316" strokeWidth={1.5} strokeDasharray="3 3" />
+            )}
+            <Area
+              type="monotone"
+              dataKey="elevation"
+              stroke="#f97316"
+              strokeWidth={2}
+              fill="url(#elevGradBar)"
+              dot={false}
+              activeDot={{ r: 3, fill: '#f97316', strokeWidth: 0 }}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      )}
+    </div>
+  )
+
+  if (isMobile) {
+    return (
+      <div
+        className="absolute bottom-0 left-0 right-0 z-10 bg-gray-950/95 backdrop-blur border-t border-white/10 shadow-2xl flex flex-col"
+        style={{ height }}
+      >
+        {/* Stats compactos + botón herramientas */}
+        <div className="flex-shrink-0 flex items-center gap-2 px-3 py-1.5 border-b border-white/5">
+          <span className="text-sm">{activityIcon}</span>
+          <span className="text-white text-xs font-semibold truncate flex-1 min-w-0">{activeRoute.name}</span>
+          {m && (
+            <div className="flex items-center gap-2 text-xs shrink-0">
+              <span className="text-gray-400">{m.distance} km</span>
+              <span className="text-gray-600">·</span>
+              <span className="text-gray-400">↑{m.elevationGain}m</span>
+              <span className="text-gray-600">·</span>
+              <span className="text-gray-400">{formatTime(m.estimatedTime)}</span>
+            </div>
+          )}
+          {/* Herramientas en menú desplegable */}
+          <button
+            onClick={() => setShowMobileTools(v => !v)}
+            className={`ml-1 p-1.5 rounded-lg border transition-all shrink-0 ${
+              showMobileTools
+                ? 'border-orange-500/50 bg-orange-500/10 text-orange-400'
+                : 'border-white/10 text-gray-500'
+            }`}
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <circle cx="7" cy="2.5" r="1" fill="currentColor"/>
+              <circle cx="7" cy="7" r="1" fill="currentColor"/>
+              <circle cx="7" cy="11.5" r="1" fill="currentColor"/>
+            </svg>
+          </button>
+          <button
+            onClick={() => refreshElevationForRoute(activeRoute.id)}
+            disabled={isLoading}
+            className="p-1.5 rounded-lg border border-white/10 text-gray-500 hover:text-orange-400 disabled:opacity-40 shrink-0 transition-all"
+          >
+            {isLoading
+              ? <span className="w-3 h-3 border border-orange-500 border-t-transparent rounded-full animate-spin inline-block" />
+              : <span className="text-xs">🔄</span>
+            }
+          </button>
+        </div>
+
+        {/* Menú de herramientas expandible */}
+        {showMobileTools && (
+          <div className="flex-shrink-0 flex gap-2 px-3 py-2 border-b border-white/5 overflow-x-auto">
+            <button
+              onClick={() => setEditingRouteId(editingRouteId === activeRouteId ? null : (activeRouteId ?? null))}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border whitespace-nowrap transition-all ${
+                editingRouteId === activeRouteId
+                  ? 'border-green-500/60 bg-green-500/15 text-green-400'
+                  : 'border-white/10 text-gray-400'
+              }`}
+            >
+              <span>✏️</span>
+              <span>{editingRouteId === activeRouteId ? 'Editando' : 'Editar'}</span>
+            </button>
+            <button
+              onClick={toggleEraser}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border whitespace-nowrap transition-all ${
+                eraserActive
+                  ? 'border-red-500/60 bg-red-500/15 text-red-400'
+                  : 'border-white/10 text-gray-400'
+              }`}
+            >
+              <span>🧹</span>
+              <span>{eraserActive ? 'Borrador ON' : 'Borrador'}</span>
+            </button>
+            {eraserActive && (
+              <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg border border-white/10">
+                <input
+                  type="range"
+                  min={50} max={500} step={25}
+                  value={eraserRadius}
+                  onChange={e => setEraserRadius(Number(e.target.value))}
+                  className="w-20 accent-red-500"
+                />
+                <span className="text-gray-400 text-[10px] w-10 whitespace-nowrap">{eraserRadius}m</span>
+              </div>
+            )}
+            <button
+              onClick={handleSnapRoute}
+              disabled={isSnapping || isLoading}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border whitespace-nowrap transition-all disabled:opacity-50 ${
+                isSnapping
+                  ? 'border-blue-500/40 bg-blue-500/10 text-blue-400'
+                  : 'border-white/10 text-gray-400'
+              }`}
+            >
+              {isSnapping ? (
+                <>
+                  <span className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                  <span>{snappingProgress}%</span>
+                </>
+              ) : (
+                <>
+                  <span>🛣️</span>
+                  <span>Ajustar a vía</span>
+                </>
+              )}
+            </button>
+          </div>
+        )}
+
+        {chart}
+      </div>
+    )
+  }
 
   return (
     <div
@@ -135,9 +318,7 @@ export function ElevationBar({ height, onHeightChange }: ElevationBarProps) {
       {/* Stats row */}
       <div className="flex items-center gap-4 px-4 pt-2 pb-1 border-b border-white/5">
         <div className="flex items-center gap-1.5">
-          <span className="text-gray-500 text-[10px]">
-            {activeRoute.activityType === 'running' ? '🏃' : activeRoute.activityType === 'cycling' ? '🚵' : '🥾'}
-          </span>
+          <span className="text-gray-500 text-[10px]">{activityIcon}</span>
           <span className="text-white text-xs font-semibold truncate max-w-[140px]">{activeRoute.name}</span>
           <span className="text-gray-600 text-[10px]">{ACTIVITY_LABELS[activeRoute.activityType]}</span>
         </div>
@@ -235,71 +416,7 @@ export function ElevationBar({ height, onHeightChange }: ElevationBarProps) {
         </div>
       </div>
 
-      {/* Chart area */}
-      <div className="flex-1 min-h-0 px-2 py-1" onMouseLeave={() => setHoverDistance(null)}>
-        {isLoading ? (
-          <div className="h-full flex items-center justify-center gap-2">
-            <div className="w-4 h-4 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
-            <span className="text-gray-500 text-xs">Cargando altimetria...</span>
-          </div>
-        ) : !hasElevation ? (
-          <div className="h-full flex items-center justify-center gap-3">
-            <span className="text-gray-600 text-xs">Sin datos de elevacion</span>
-            <button
-              onClick={() => refreshElevationForRoute(activeRoute.id)}
-              className="px-3 py-1 rounded-lg text-xs bg-orange-500/20 text-orange-400 border border-orange-500/30 hover:bg-orange-500/30 transition-all"
-            >
-              🔄 Cargar altimetria
-            </button>
-          </div>
-        ) : (
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart
-              data={profile}
-              margin={{ top: 4, right: 8, bottom: 0, left: 0 }}
-              style={{ cursor: 'crosshair' }}
-              onMouseMove={handleChartMouseMove}
-              onMouseLeave={() => setHoverDistance(null)}
-              onClick={handleChartClick}
-            >
-              <defs>
-                <linearGradient id="elevGradBar" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%"  stopColor="#f97316" stopOpacity={0.5} />
-                  <stop offset="95%" stopColor="#f97316" stopOpacity={0.05} />
-                </linearGradient>
-              </defs>
-              <XAxis
-                dataKey="distance"
-                tickFormatter={v => `${(v as number).toFixed(1)}km`}
-                tick={{ fill: '#4b5563', fontSize: 9 }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <YAxis
-                domain={['auto', 'auto']}
-                tickFormatter={v => `${v}m`}
-                tick={{ fill: '#4b5563', fontSize: 9 }}
-                axisLine={false}
-                tickLine={false}
-                width={40}
-              />
-              <Tooltip content={<CustomTooltip />} />
-              {hoverDistanceKm != null && (
-                <ReferenceLine x={hoverDistanceKm} stroke="#f97316" strokeWidth={1.5} strokeDasharray="3 3" />
-              )}
-              <Area
-                type="monotone"
-                dataKey="elevation"
-                stroke="#f97316"
-                strokeWidth={2}
-                fill="url(#elevGradBar)"
-                dot={false}
-                activeDot={{ r: 3, fill: '#f97316', strokeWidth: 0 }}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        )}
-      </div>
+      {chart}
     </div>
   )
 }

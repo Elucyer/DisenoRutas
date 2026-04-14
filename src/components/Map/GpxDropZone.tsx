@@ -4,12 +4,15 @@ import { calculateMetrics } from '../../utils/routeMetrics'
 import { useRouteStore } from '../../store/routeStore'
 import { useAuthStore } from '../../store/authStore'
 import { useAuthModalStore } from '../../store/authModalStore'
+import { useIsMobile } from '../../hooks/useIsMobile'
 import type { Route } from '../../types/route'
 
 export function GpxDropZone() {
   const { saveRoute } = useRouteStore()
   const user = useAuthStore(s => s.user)
   const showAuthModal = useAuthModalStore(s => s.show)
+  const isMobile = useIsMobile()
+  const activeRouteId = useRouteStore(s => s.activeRouteId)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const processFile = useCallback((file: File) => {
@@ -48,7 +51,11 @@ export function GpxDropZone() {
     <div
       onDrop={handleDrop}
       onDragOver={e => e.preventDefault()}
-      className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10"
+      className={`absolute z-10 ${
+        isMobile
+          ? activeRouteId ? 'bottom-36 right-4' : 'bottom-20 right-4'
+          : 'bottom-4 left-1/2 -translate-x-1/2'
+      }`}
     >
       <input
         ref={inputRef}
@@ -58,13 +65,23 @@ export function GpxDropZone() {
         className="hidden"
         onChange={e => Array.from(e.target.files ?? []).forEach(processFile)}
       />
-      <button
-        onClick={() => { if (!user) { showAuthModal(); return } inputRef.current?.click() }}
-        className="bg-gray-900/90 backdrop-blur border border-white/10 hover:border-orange-500/50 rounded-xl px-4 py-2 text-gray-400 hover:text-orange-400 text-xs font-medium transition-all flex items-center gap-2 shadow-lg"
-      >
-        <span>📂</span>
-        <span>Importar GPX</span>
-      </button>
+      {isMobile ? (
+        <button
+          onClick={() => { if (!user) { showAuthModal(); return } inputRef.current?.click() }}
+          className="w-10 h-10 rounded-xl bg-gray-900/95 border border-white/10 hover:border-orange-500/50 shadow-lg flex items-center justify-center text-base backdrop-blur transition-all"
+          aria-label="Importar GPX"
+        >
+          📂
+        </button>
+      ) : (
+        <button
+          onClick={() => { if (!user) { showAuthModal(); return } inputRef.current?.click() }}
+          className="bg-gray-900/90 backdrop-blur border border-white/10 hover:border-orange-500/50 rounded-xl px-4 py-2 text-gray-400 hover:text-orange-400 text-xs font-medium transition-all flex items-center gap-2 shadow-lg"
+        >
+          <span>📂</span>
+          <span>Importar GPX</span>
+        </button>
+      )}
     </div>
   )
 }

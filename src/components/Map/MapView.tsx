@@ -72,6 +72,12 @@ export function MapView() {
       style: BASE_STYLES['liberty'] as string,
       center: [-74.297, 4.571], // Colombia fallback
       zoom: 6,
+      transformRequest: (url, resourceType) => {
+        if (resourceType === 'Glyphs' && url.includes('openfreemap.org/fonts')) {
+          return { url: url.replace('https://tiles.openfreemap.org/fonts', 'https://fonts.openmaptiles.org') }
+        }
+        return { url }
+      },
     })
 
     // Center on user's location as soon as possible

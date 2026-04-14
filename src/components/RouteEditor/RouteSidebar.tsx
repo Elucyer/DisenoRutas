@@ -39,7 +39,7 @@ const DISTANCE_RANGES = [
   { label: '> 30 km', min: 30, max: Infinity },
 ]
 
-export function RouteSidebar() {
+export function RouteSidebar({ onClose }: { onClose?: () => void } = {}) {
   const { routes, activeRouteId, setActiveRoute, deleteRoute } = useRouteStore()
   const { privacyZone, setPrivacyZone, addingNote, toggleAddingNote } = useMapStore()
   const { notes, loadNotes, deleteNote } = useNoteStore()
@@ -149,6 +149,17 @@ export function RouteSidebar() {
           </h1>
         )}
         <div className="flex items-center gap-1.5 min-w-0">
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-white/5 transition-colors ml-1"
+              aria-label="Cerrar"
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+              </svg>
+            </button>
+          )}
           {panel === 'list' && (
             <>
               <button
