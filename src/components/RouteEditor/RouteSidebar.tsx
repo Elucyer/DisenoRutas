@@ -44,6 +44,7 @@ export function RouteSidebar({ onClose }: { onClose?: () => void } = {}) {
   const { privacyZone, setPrivacyZone, addingNote, toggleAddingNote } = useMapStore()
   const { notes, loadNotes, deleteNote } = useNoteStore()
   const isOwner = useAuthStore(s => s.isOwner)
+  const user = useAuthStore(s => s.user)
   const [panel, setPanel] = useState<Panel>('list')
   const [detailTab, setDetailTab] = useState<DetailTab>('metrics')
   const [showFilters, setShowFilters] = useState(false)
@@ -526,14 +527,16 @@ export function RouteSidebar({ onClose }: { onClose?: () => void } = {}) {
 
       {/* Footer */}
       <div className="border-t border-white/5 px-3 py-2 flex items-center justify-between gap-2 shrink-0">
-        <button
-          onClick={() => setPanel('strava')}
-          title="Importar desde Strava"
-          className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-medium border border-orange-500/30 text-orange-400 hover:bg-orange-500/10 transition-all"
-        >
-          <svg viewBox="0 0 24 24" className="w-3 h-3 fill-current"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066l-2.024 4.116zm-7.698-4.348l2.104 4.326L12 24l-1.195-2.4-3.116-3.948z"/></svg>
-          Strava
-        </button>
+        {user?.isAdmin && (
+          <button
+            onClick={() => setPanel('strava')}
+            title="Sincronizar rutas desde Strava"
+            className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-medium border border-orange-500/30 text-orange-400 hover:bg-orange-500/10 transition-all"
+          >
+            <svg viewBox="0 0 24 24" className="w-3 h-3 fill-current"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066l-2.024 4.116zm-7.698-4.348l2.104 4.326L12 24l-1.195-2.4-3.116-3.948z"/></svg>
+            Sync
+          </button>
+        )}
         <LoginButton />
       </div>
     </div>
