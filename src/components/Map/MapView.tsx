@@ -10,6 +10,7 @@ import { buildElevationProfile } from '../../utils/routeMetrics'
 import { setMapInstance } from '../../services/mapInstance'
 import { useRouteEditor } from '../../hooks/useRouteEditor'
 import { AddNoteModal, ViewNoteModal } from './NoteModal'
+import { MapSearch } from './MapSearch'
 import type { Route, Coordinate } from '../../types/route'
 import type { PrivacyZone } from '../../store/mapStore'
 import type { WaypointNote } from '../../types/note'
@@ -478,6 +479,7 @@ export function MapView() {
   return (
     <div className="relative w-full h-full">
       <div ref={containerRef} className="w-full h-full" />
+      <MapSearch />
       {pendingNote && activeRouteId && (
         <AddNoteModal
           routeId={activeRouteId}
