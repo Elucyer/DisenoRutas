@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { getMapInstance } from '../../services/mapInstance'
+import { authHeader, useAuthStore } from '../../store/authStore'
 import maplibregl from 'maplibre-gl'
 
 interface NominatimResult {
@@ -103,15 +104,38 @@ function parseCoords(raw: string): { lat: number; lng: number } | null {
   return null
 }
 
+interface HistoryItem {
+  id: string
+  display_name: string
+  lat: number
+  lng: number
+  result_type: string
+}
+
+const BASE = import.meta.env.DEV ? '/strava-api' : ''
+const API = `${BASE}/api/search-history`
+
 export function MapSearch() {
+  const user = useAuthStore(s => s.user)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<NominatimResult[]>([])
+  const [history, setHistory] = useState<HistoryItem[]>([])
   const [loading, setLoading] = useState(false)
   const [open, setOpen] = useState(false)
   const markerRef = useRef<maplibregl.Marker | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+
+  const fetchHistory = useCallback(async () => {
+    if (!useAuthStore.getState().user) return
+    try {
+      const res = await fetch(API, { headers: authHeader() })
+      if (res.ok) setHistory(await res.json())
+    } catch { /* silent */ }
+  }, [])
+
+  useEffect(() => { fetchHistory() }, [fetchHistory, user])
 
   const flyTo = useCallback((lng: number, lat: number, zoom = 14) => {
     const map = getMapInstance()
@@ -169,10 +193,51 @@ export function MapSearch() {
     debounceRef.current = setTimeout(() => search(val), 350)
   }
 
-  const handleSelect = (r: NominatimResult) => {
+  const handleSelect = async (r: NominatimResult) => {
+    const lat = parseFloat(r.lat)
+    const lng = parseFloat(r.lon)
     setQuery(r.display_name)
     setOpen(false)
-    flyTo(parseFloat(r.lon), parseFloat(r.lat))
+    flyTo(lng, lat)
+
+    let display_name = r.display_name
+    if (r.type === 'coordinates') {
+      try {
+        const rev = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
+          { headers: { 'Accept-Language': 'es,en' } }
+        )
+        const data = await rev.json()
+        if (data?.display_name) {
+          display_name = data.display_name
+          setQuery(display_name)
+        }
+      } catch { /* keep coordinate string */ }
+    }
+
+    fetch(API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader() },
+      body: JSON.stringify({ display_name, lat, lng, result_type: r.type }),
+    }).then(() => fetchHistory()).catch(() => {})
+  }
+
+  const handleSelectHistory = (h: HistoryItem) => {
+    setQuery(h.display_name)
+    setOpen(false)
+    flyTo(h.lng, h.lat)
+  }
+
+  const handleDeleteHistory = (id: string) => {
+    fetch(`${API}/${id}`, { method: 'DELETE', headers: authHeader() })
+      .then(() => setHistory(prev => prev.filter(h => h.id !== id)))
+      .catch(() => {})
+  }
+
+  const handleClearHistory = () => {
+    fetch(API, { method: 'DELETE', headers: authHeader() })
+      .then(() => { setHistory([]); setOpen(false) })
+      .catch(() => {})
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -215,7 +280,7 @@ export function MapSearch() {
           value={query}
           onChange={handleInput}
           onKeyDown={handleKeyDown}
-          onFocus={() => results.length > 0 && setOpen(true)}
+          onFocus={() => setOpen(results.length > 0 || history.length > 0)}
           placeholder="Buscar ciudad, lugar, país o coordenadas…"
           className="w-full pl-9 pr-8 py-2 text-sm rounded-lg shadow-lg border-2 border-black bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-400 placeholder-gray-400"
         />
@@ -231,29 +296,63 @@ export function MapSearch() {
         )}
       </div>
 
-      {open && results.length > 0 && (
-        <ul className="mt-1 bg-white/97 backdrop-blur-sm border border-gray-200 rounded-lg shadow-xl overflow-hidden text-sm">
-          {results.map((r) => (
-            <li
-              key={r.place_id}
-              onMouseDown={() => handleSelect(r)}
-              className="px-3 py-2 cursor-pointer hover:bg-blue-50 flex items-start gap-2 border-b border-gray-100 last:border-0"
-            >
-              <span className="mt-0.5 shrink-0 text-blue-400">
-                {r.type === 'coordinates' ? (
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-                ) : (
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                  </svg>
-                )}
-              </span>
-              <span className="text-gray-700 leading-snug">{r.display_name}</span>
+      {open && (results.length > 0 || (!query && history.length > 0)) && (
+        <ul className="mt-1 bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden text-sm">
+          {!query && history.length > 0 && (
+            <li className="px-3 pt-2 pb-1 flex items-center justify-between">
+              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Búsquedas recientes</span>
+              <button
+                onMouseDown={handleClearHistory}
+                className="text-xs text-gray-400 hover:text-red-500"
+              >Borrar todo</button>
             </li>
-          ))}
+          )}
+          {!query
+            ? history.map((h) => (
+              <li
+                key={h.id}
+                onMouseDown={() => handleSelectHistory(h)}
+                className="px-3 py-2 cursor-pointer hover:bg-blue-50 flex items-start gap-2 border-b border-gray-100 last:border-0"
+              >
+                <span className="mt-0.5 shrink-0 text-blue-400">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </span>
+                <span className="text-gray-700 leading-snug flex-1">{h.display_name}</span>
+                <button
+                  onMouseDown={(e) => { e.stopPropagation(); handleDeleteHistory(h.id) }}
+                  className="shrink-0 text-gray-300 hover:text-red-400 ml-1"
+                  title="Eliminar"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </li>
+            ))
+            : results.map((r) => (
+              <li
+                key={r.place_id}
+                onMouseDown={() => handleSelect(r)}
+                className="px-3 py-2 cursor-pointer hover:bg-blue-50 flex items-start gap-2 border-b border-gray-100 last:border-0"
+              >
+                <span className="mt-0.5 shrink-0 text-blue-400">
+                  {r.type === 'coordinates' ? (
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                  ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                    </svg>
+                  )}
+                </span>
+                <span className="text-gray-700 leading-snug flex-1">{r.display_name}</span>
+              </li>
+            ))
+          }
         </ul>
       )}
     </div>

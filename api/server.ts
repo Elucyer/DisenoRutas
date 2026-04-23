@@ -67,6 +67,18 @@ async function setupDB() {
       created_at TIMESTAMPTZ DEFAULT now()
     )
   `)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rutasmap_search_history (
+      id           TEXT PRIMARY KEY,
+      user_id      TEXT NOT NULL,
+      display_name TEXT NOT NULL,
+      lat          DOUBLE PRECISION NOT NULL,
+      lng          DOUBLE PRECISION NOT NULL,
+      result_type  TEXT NOT NULL DEFAULT 'place',
+      searched_at  TIMESTAMPTZ DEFAULT now()
+    )
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_search_history_user ON rutasmap_search_history(user_id, searched_at DESC)`)
 }
 setupDB().catch(console.error)
 
@@ -196,6 +208,72 @@ app.post('/api/notes', async (req, res) => {
 app.delete('/api/notes/:id', async (req, res) => {
   try {
     await pool.query('DELETE FROM rutasmap_waypoint_notes WHERE id = $1', [req.params.id])
+    res.json({ ok: true })
+  } catch (err) { console.error(err); res.status(500).json({ error: 'DB error' }) }
+})
+
+// ── Search History ────────────────────────────────────────────────────────────
+
+app.get('/api/search-history', async (req, res) => {
+  const auth = getDevAuth(req)
+  if (!auth) { res.status(401).json({ error: 'Login requerido' }); return }
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, display_name, lat, lng, result_type
+       FROM rutasmap_search_history
+       WHERE user_id = $1
+       ORDER BY searched_at DESC
+       LIMIT 5`,
+      [auth.sub]
+    )
+    res.json(rows)
+  } catch (err) { console.error(err); res.status(500).json({ error: 'DB error' }) }
+})
+
+app.post('/api/search-history', async (req, res) => {
+  const auth = getDevAuth(req)
+  if (!auth) { res.status(401).json({ error: 'Login requerido' }); return }
+  const { display_name, lat, lng, result_type } = req.body ?? {}
+  if (!display_name || lat == null || lng == null) { res.status(400).json({ error: 'Missing fields' }); return }
+  try {
+    const id = crypto.randomUUID()
+    await pool.query(
+      `INSERT INTO rutasmap_search_history (id, user_id, display_name, lat, lng, result_type)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [id, auth.sub, String(display_name).slice(0, 500), Number(lat), Number(lng), result_type || 'place']
+    )
+    // Keep only last 5 per user
+    await pool.query(
+      `DELETE FROM rutasmap_search_history
+       WHERE user_id = $1 AND id NOT IN (
+         SELECT id FROM rutasmap_search_history
+         WHERE user_id = $1
+         ORDER BY searched_at DESC
+         LIMIT 5
+       )`,
+      [auth.sub]
+    )
+    res.json({ ok: true })
+  } catch (err) { console.error(err); res.status(500).json({ error: 'DB error' }) }
+})
+
+app.delete('/api/search-history/:id', async (req, res) => {
+  const auth = getDevAuth(req)
+  if (!auth) { res.status(401).json({ error: 'Login requerido' }); return }
+  try {
+    await pool.query(
+      'DELETE FROM rutasmap_search_history WHERE id = $1 AND user_id = $2',
+      [req.params.id, auth.sub]
+    )
+    res.json({ ok: true })
+  } catch (err) { console.error(err); res.status(500).json({ error: 'DB error' }) }
+})
+
+app.delete('/api/search-history', async (req, res) => {
+  const auth = getDevAuth(req)
+  if (!auth) { res.status(401).json({ error: 'Login requerido' }); return }
+  try {
+    await pool.query('DELETE FROM rutasmap_search_history WHERE user_id = $1', [auth.sub])
     res.json({ ok: true })
   } catch (err) { console.error(err); res.status(500).json({ error: 'DB error' }) }
 })

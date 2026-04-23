@@ -68,5 +68,17 @@ export async function setupDB() {
       created_at TIMESTAMPTZ DEFAULT now()
     )
   `)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rutasmap_search_history (
+      id         TEXT PRIMARY KEY,
+      user_id    TEXT NOT NULL,
+      display_name TEXT NOT NULL,
+      lat        DOUBLE PRECISION NOT NULL,
+      lng        DOUBLE PRECISION NOT NULL,
+      result_type TEXT NOT NULL DEFAULT 'place',
+      searched_at TIMESTAMPTZ DEFAULT now()
+    )
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_search_history_user ON rutasmap_search_history(user_id, searched_at DESC)`)
   dbReady = true
 }
