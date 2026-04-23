@@ -11,7 +11,97 @@ interface NominatimResult {
   importance: number
 }
 
-const COORD_REGEX = /^\s*(-?\d+(?:\.\d+)?)\s*[,\s]\s*(-?\d+(?:\.\d+)?)\s*$/
+// Shared character classes for reuse in patterns
+const D = `[°º]`          // degree symbol variants
+const M = `['′'ʼ]`        // minute symbol variants
+const S = `["″"ʺ]`        // second symbol variants
+const SEP = `[,;\\s]`     // separator between lat and lng
+
+// Helpers
+const sign = (dir: string) => /[SsWw]/.test(dir) ? -1 : 1
+const toDD = (deg: string, min = '0', sec = '0') =>
+  parseFloat(deg) + parseFloat(min) / 60 + parseFloat(sec) / 3600
+
+function parseCoords(raw: string): { lat: number; lng: number } | null {
+  const q = raw.trim()
+
+  // ── 1. Decimal degrees, signed or with cardinal ──────────────────────────
+  // e.g.  4.71, -74.07 | -48.877, -123.393 | 48.877S 123.393W | N4.71 W74.07
+  const dd = q.match(
+    new RegExp(
+      `^([NSns])?\\s*(-?\\d+(?:\\.\\d+)?)${D}?\\s*([NSns])?` +
+      `${SEP}+` +
+      `([EWew])?\\s*(-?\\d+(?:\\.\\d+)?)${D}?\\s*([EWew])?$`
+    )
+  )
+  if (dd) {
+    const latDir = dd[1] || dd[3] || ''
+    const lngDir = dd[4] || dd[6] || ''
+    const lat = parseFloat(dd[2]) * (latDir ? sign(latDir) : 1)
+    const lng = parseFloat(dd[5]) * (lngDir ? sign(lngDir) : 1)
+    if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) return { lat, lng }
+  }
+
+  // ── 2. DMS with cardinal  63° 2' 56.73" S, 60° 57' 32.38" W ─────────────
+  const dms = q.match(
+    new RegExp(
+      `(\\d+)\\s*${D}\\s*(\\d+)\\s*${M}\\s*(\\d+(?:\\.\\d+)?)\\s*${S}?\\s*([NSns])` +
+      `${SEP}+` +
+      `(\\d+)\\s*${D}\\s*(\\d+)\\s*${M}\\s*(\\d+(?:\\.\\d+)?)\\s*${S}?\\s*([EWew])`
+    )
+  )
+  if (dms) {
+    const lat = toDD(dms[1], dms[2], dms[3]) * sign(dms[4])
+    const lng = toDD(dms[5], dms[6], dms[7]) * sign(dms[8])
+    return { lat, lng }
+  }
+
+  // ── 3. DM with cardinal  48° 52.6′ S, 123° 23.6′ W ──────────────────────
+  const dm = q.match(
+    new RegExp(
+      `(\\d+)\\s*${D}\\s*(\\d+(?:\\.\\d+)?)\\s*${M}?\\s*([NSns])` +
+      `${SEP}+` +
+      `(\\d+)\\s*${D}\\s*(\\d+(?:\\.\\d+)?)\\s*${M}?\\s*([EWew])`
+    )
+  )
+  if (dm) {
+    const lat = toDD(dm[1], dm[2]) * sign(dm[3])
+    const lng = toDD(dm[4], dm[5]) * sign(dm[6])
+    return { lat, lng }
+  }
+
+  // ── 4. Degrees only with cardinal  48°S 123°W ────────────────────────────
+  const dOnly = q.match(
+    new RegExp(
+      `(\\d+(?:\\.\\d+)?)\\s*${D}\\s*([NSns])` +
+      `${SEP}+` +
+      `(\\d+(?:\\.\\d+)?)\\s*${D}\\s*([EWew])`
+    )
+  )
+  if (dOnly) {
+    const lat = parseFloat(dOnly[1]) * sign(dOnly[2])
+    const lng = parseFloat(dOnly[3]) * sign(dOnly[4])
+    return { lat, lng }
+  }
+
+  // ── 5. Compact DDMMSS  632856S 0605732W ──────────────────────────────────
+  const compact = q.match(/^(\d{2})(\d{2})(\d{2}(?:\.\d+)?)([NSns])\s*(\d{2,3})(\d{2})(\d{2}(?:\.\d+)?)([EWew])$/)
+  if (compact) {
+    const lat = toDD(compact[1], compact[2], compact[3]) * sign(compact[4])
+    const lng = toDD(compact[5], compact[6], compact[7]) * sign(compact[8])
+    return { lat, lng }
+  }
+
+  // ── 6. ISO 6709 short  +48.8566+002.3522/ ────────────────────────────────
+  const iso = q.match(/^([+-]\d+(?:\.\d+)?)([+-]\d+(?:\.\d+)?)\/?$/)
+  if (iso) {
+    const lat = parseFloat(iso[1])
+    const lng = parseFloat(iso[2])
+    if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) return { lat, lng }
+  }
+
+  return null
+}
 
 export function MapSearch() {
   const [query, setQuery] = useState('')
@@ -37,22 +127,18 @@ export function MapSearch() {
   }, [])
 
   const search = useCallback(async (q: string) => {
-    const coordMatch = q.match(COORD_REGEX)
-    if (coordMatch) {
-      const lat = parseFloat(coordMatch[1])
-      const lng = parseFloat(coordMatch[2])
-      if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-        setResults([{
-          place_id: -1,
-          display_name: `${lat}, ${lng}`,
-          lat: String(lat),
-          lon: String(lng),
-          type: 'coordinates',
-          importance: 1,
-        }])
-        setOpen(true)
-        return
-      }
+    const dms = parseCoords(q)
+    if (dms) {
+      setResults([{
+        place_id: -1,
+        display_name: `${dms.lat.toFixed(6)}, ${dms.lng.toFixed(6)}`,
+        lat: String(dms.lat),
+        lon: String(dms.lng),
+        type: 'coordinates',
+        importance: 1,
+      }])
+      setOpen(true)
+      return
     }
 
     if (q.trim().length < 2) { setResults([]); setOpen(false); return }
