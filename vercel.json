@@ -13,9 +13,11 @@
     "api/auth/strava.ts": { "maxDuration": 10 },
     "api/auth/callback.ts": { "maxDuration": 15 },
     "api/auth/me.ts": { "maxDuration": 10 },
-    "api/search-history.ts": { "maxDuration": 10 },
-    "api/search-history/[id].ts": { "maxDuration": 10 }
+    "api/search-history.ts": { "maxDuration": 10 }
   },
+  "rewrites": [
+    { "source": "/api/search-history/:id", "destination": "/api/search-history?id=:id" }
+  ],
   "headers": [
     {
       "source": "/(.*)",

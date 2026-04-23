@@ -45,7 +45,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (req.method === 'DELETE') {
-      await pool.query('DELETE FROM rutasmap_search_history WHERE user_id = $1', [user.sub])
+      const id = Array.isArray(req.query.id) ? req.query.id[0] : req.query.id
+      if (id) {
+        await pool.query(
+          'DELETE FROM rutasmap_search_history WHERE id = $1 AND user_id = $2',
+          [id, user.sub]
+        )
+      } else {
+        await pool.query('DELETE FROM rutasmap_search_history WHERE user_id = $1', [user.sub])
+      }
       return res.json({ ok: true })
     }
 
