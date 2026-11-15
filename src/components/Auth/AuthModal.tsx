@@ -1,6 +1,5 @@
 import { useAuthModalStore } from '../../store/authModalStore'
-
-const API = import.meta.env.DEV ? '/strava-api' : ''
+import { API_BASE } from '../../services/api'
 
 export function AuthModal() {
   const hide = useAuthModalStore(s => s.hide)
@@ -16,7 +15,7 @@ export function AuthModal() {
         <p className="text-gray-500 text-xs mb-5">Conéctate con Strava para guardar y cargar rutas en RutasMap</p>
 
         <a
-          href={`${API}/api/auth/strava`}
+          href={`${API_BASE}/api/auth/strava`}
           className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-orange-500 hover:bg-orange-400 transition-colors text-white font-medium text-sm"
         >
           <svg viewBox="0 0 24 24" className="w-4 h-4 fill-current">

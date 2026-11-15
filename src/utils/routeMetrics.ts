@@ -32,21 +32,33 @@ export function buildElevationProfile(coords: Coordinate[]): ElevationPoint[] {
   return points
 }
 
+const ELEVATION_NOISE_M = 2
+
 export function calculateMetrics(coords: Coordinate[], activityType: ActivityType): RouteMetrics {
   const distance = totalDistance(coords)
-  const elevations = coords.map(c => c.elevation ?? 0)
+  // Missing elevation must not count as 0 m (it would create fake climbs)
+  const elevations = coords
+    .map(c => c.elevation)
+    .filter((e): e is number => typeof e === 'number' && Number.isFinite(e))
 
   let elevationGain = 0
   let elevationLoss = 0
+  // Loop instead of Math.max(...arr): spreading 100k+ points overflows the call stack
+  let elevationMax = elevations.length ? -Infinity : 0
+  let elevationMin = elevations.length ? Infinity : 0
 
-  for (let i = 1; i < elevations.length; i++) {
-    const diff = elevations[i] - elevations[i - 1]
-    if (diff > 0) elevationGain += diff
-    else elevationLoss += Math.abs(diff)
+  // Hysteresis: ignore GPS/DEM jitter below the threshold so D+ isn't inflated
+  let ref = elevations[0]
+  for (const e of elevations) {
+    if (e > elevationMax) elevationMax = e
+    if (e < elevationMin) elevationMin = e
+    const diff = e - ref
+    if (Math.abs(diff) >= ELEVATION_NOISE_M) {
+      if (diff > 0) elevationGain += diff
+      else elevationLoss -= diff
+      ref = e
+    }
   }
-
-  const elevationMax = Math.max(...elevations)
-  const elevationMin = Math.min(...elevations)
 
   const estimatedTime = estimateTime(distance, elevationGain, activityType)
   const difficulty = calculateDifficulty(distance, elevationGain, elevations)
@@ -82,11 +94,11 @@ function estimateTime(distanceKm: number, elevGainM: number, activityType: Activ
 }
 
 function calculateDifficulty(distKm: number, elevGainM: number, elevations: number[]): DifficultyLevel {
-  const gradients: number[] = []
+  let maxGradient = 0
   for (let i = 1; i < elevations.length; i++) {
-    gradients.push(Math.abs(elevations[i] - elevations[i - 1]))
+    const step = Math.abs(elevations[i] - elevations[i - 1])
+    if (step > maxGradient) maxGradient = step
   }
-  const maxGradient = gradients.length > 0 ? Math.max(...gradients) : 0
 
   const score = distKm * 1 + (elevGainM / 1000) * 10 + (maxGradient / 10) * 0.5
 

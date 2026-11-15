@@ -48,8 +48,8 @@ export function ElevationProfile() {
     )
   }
 
-  const minElev = Math.min(...profile.map(p => p.elevation))
-  const maxElev = Math.max(...profile.map(p => p.elevation))
+  const minElev = profile.reduce((m, p) => Math.min(m, p.elevation), Infinity)
+  const maxElev = profile.reduce((m, p) => Math.max(m, p.elevation), -Infinity)
   const domain: [number, number] = [Math.max(0, minElev - 50), maxElev + 50]
 
   return (

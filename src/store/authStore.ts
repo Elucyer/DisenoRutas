@@ -21,7 +21,8 @@ function parseToken(token: string): AuthUser | null {
     const [, body] = token.split('.')
     // base64url → base64
     const b64 = body.replace(/-/g, '+').replace(/_/g, '/')
-    const payload = JSON.parse(atob(b64))
+    const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0))
+    const payload = JSON.parse(new TextDecoder().decode(bytes))
     if (payload.exp < Math.floor(Date.now() / 1000)) return null
     return {
       id: payload.sub,
@@ -35,6 +36,13 @@ function parseToken(token: string): AuthUser | null {
 
 const STORAGE_KEY = 'rutasmap_token'
 
+// Storage can throw (blocked third-party storage inside iframes, private mode)
+const storage = {
+  get: () => { try { return localStorage.getItem(STORAGE_KEY) } catch { return null } },
+  set: (v: string) => { try { localStorage.setItem(STORAGE_KEY, v) } catch { /* session-only */ } },
+  remove: () => { try { localStorage.removeItem(STORAGE_KEY) } catch { /* noop */ } },
+}
+
 export const useAuthStore = create<AuthStore>()((set, get) => ({
   user: null,
   token: null,
@@ -42,12 +50,12 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
   login: (token) => {
     const user = parseToken(token)
     if (!user) return
-    localStorage.setItem(STORAGE_KEY, token)
+    storage.set(token)
     set({ user, token })
   },
 
   logout: () => {
-    localStorage.removeItem(STORAGE_KEY)
+    storage.remove()
     set({ user: null, token: null })
   },
 
@@ -61,11 +69,17 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
 }))
 
 // Initialize from localStorage on module load
-const stored = localStorage.getItem(STORAGE_KEY)
+const stored = storage.get()
 if (stored) {
   const user = parseToken(stored)
   if (user) useAuthStore.setState({ user, token: stored })
-  else localStorage.removeItem(STORAGE_KEY)
+  else storage.remove()
+}
+
+/** Mirrors api/notes/[id].ts: note author, route owner or admin */
+export function canDeleteNote(user: AuthUser | null, noteUserId?: string | null, routeUserId?: string | null): boolean {
+  if (!user) return false
+  return user.isAdmin || (!!noteUserId && noteUserId === user.id) || (!!routeUserId && routeUserId === user.id)
 }
 
 /** Returns Authorization header object if logged in */

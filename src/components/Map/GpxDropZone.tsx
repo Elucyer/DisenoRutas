@@ -5,7 +5,10 @@ import { useRouteStore } from '../../store/routeStore'
 import { useAuthStore } from '../../store/authStore'
 import { useAuthModalStore } from '../../store/authModalStore'
 import { useIsMobile } from '../../hooks/useIsMobile'
+import { useToastStore } from '../../store/toastStore'
 import type { Route } from '../../types/route'
+
+const MAX_GPX_BYTES = 20 * 1024 * 1024
 
 export function GpxDropZone() {
   const { saveRoute } = useRouteStore()
@@ -18,11 +21,20 @@ export function GpxDropZone() {
   const processFile = useCallback((file: File) => {
     const nameOk = file.name.toLowerCase().endsWith('.gpx')
     const typeOk = !file.type || file.type === 'application/gpx+xml' || file.type === 'application/xml' || file.type === 'text/xml'
-    if (!nameOk || !typeOk) return
+    const toast = useToastStore.getState()
+    if (!nameOk || !typeOk) { toast.error(`"${file.name}" no es un archivo .gpx`); return }
+    if (file.size > MAX_GPX_BYTES) { toast.error(`"${file.name}" supera 20 MB`); return }
     const reader = new FileReader()
+    reader.onerror = () => toast.error(`No se pudo leer "${file.name}"`)
     reader.onload = e => {
       const text = e.target?.result as string
-      const partial = parseGPX(text)
+      let partial: Partial<Route>
+      try {
+        partial = parseGPX(text)
+      } catch (err) {
+        toast.error(`${file.name}: ${(err as Error).message}`)
+        return
+      }
       if (!partial.coordinates || partial.coordinates.length < 2) return
 
       const route: Route = {
@@ -33,10 +45,11 @@ export function GpxDropZone() {
         waypoints: partial.waypoints ?? [],
         color: partial.color!,
         tags: [],
-        createdAt: Date.now(),
+        createdAt: partial.createdAt ?? Date.now(),
         metrics: calculateMetrics(partial.coordinates, partial.activityType!),
       }
       saveRoute(route)
+      toast.success(`Ruta "${route.name}" importada`)
     }
     reader.readAsText(file)
   }, [saveRoute])
@@ -63,7 +76,10 @@ export function GpxDropZone() {
         accept=".gpx"
         multiple
         className="hidden"
-        onChange={e => Array.from(e.target.files ?? []).forEach(processFile)}
+        onChange={e => {
+          Array.from(e.target.files ?? []).forEach(processFile)
+          e.target.value = ''  // allow re-importing the same file
+        }}
       />
       {isMobile ? (
         <button

@@ -3,7 +3,8 @@ import { useRouteStore } from '../../store/routeStore'
 import { useMapStore } from '../../store/mapStore'
 import { useNoteStore } from '../../store/noteStore'
 import { LoginButton } from '../Auth/LoginButton'
-import { useAuthStore } from '../../store/authStore'
+import { useAuthStore, canDeleteNote } from '../../store/authStore'
+import { useAuthModalStore } from '../../store/authModalStore'
 import { getMapInstance } from '../../services/mapInstance'
 import { MetricsSummary } from './MetricsSummary'
 import { ElevationProfile } from '../ElevationProfile/ElevationProfile'
@@ -444,7 +445,7 @@ export function RouteSidebar({ onClose }: { onClose?: () => void } = {}) {
               <div className="h-full flex flex-col">
                 <div className="p-3 border-b border-white/5">
                   <button
-                    onClick={toggleAddingNote}
+                    onClick={() => (user ? toggleAddingNote() : useAuthModalStore.getState().show())}
                     className={`w-full py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-2 border transition-all ${
                       addingNote
                         ? 'bg-orange-500/20 border-orange-500/50 text-orange-400'
@@ -452,7 +453,7 @@ export function RouteSidebar({ onClose }: { onClose?: () => void } = {}) {
                     }`}
                   >
                     <span>📍</span>
-                    {addingNote ? 'Clic en el mapa para colocar nota...' : 'Añadir nota en el mapa'}
+                    {!user ? 'Inicia sesión para añadir notas' : addingNote ? 'Clic en el mapa para colocar nota...' : 'Añadir nota en el mapa'}
                   </button>
                 </div>
                 <div className="flex-1 overflow-y-auto">
@@ -476,10 +477,13 @@ export function RouteSidebar({ onClose }: { onClose?: () => void } = {}) {
                             <p className="text-gray-600 text-[9px]">
                               {new Date(note.createdAt).toLocaleDateString('es', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
                             </p>
-                            <button
-                              onClick={() => deleteNote(note.id)}
-                              className="text-gray-600 hover:text-red-400 text-xs transition-colors"
-                            >🗑️</button>
+                            {canDeleteNote(user, note.userId, activeRoute.userId) && (
+                              <button
+                                onClick={() => deleteNote(note.id)}
+                                className="text-gray-600 hover:text-red-400 text-xs transition-colors"
+                                aria-label="Eliminar nota"
+                              >🗑️</button>
+                            )}
                           </div>
                         </div>
                       ))}

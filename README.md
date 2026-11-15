@@ -42,8 +42,16 @@ Aplicación web para visualizar, analizar y gestionar rutas de entrenamiento en 
 ### Clima
 - Condiciones meteorológicas actuales en el punto de inicio de cada ruta
 
+### Cuentas, notas y búsqueda
+- **Login con Strava** (OAuth) para guardar rutas propias e importar tus actividades
+- **Notas georreferenciadas** con foto sobre cualquier punto de una ruta
+- **Buscador** de lugares y coordenadas (Nominatim) con historial de las últimas 5 búsquedas
+- Compartir ruta por enlace (`?route=<id>`)
+
 ### Privacidad
 - Los primeros 200 m de cada ruta se ocultan automáticamente para proteger la ubicación de salida
+
+---
 
 ---
 
@@ -55,15 +63,18 @@ Aplicación web para visualizar, analizar y gestionar rutas de entrenamiento en 
 | Mapa | MapLibre GL JS |
 | Estilos | Tailwind CSS v4 |
 | Estado | Zustand |
-| Backend (dev) | Express + Node.js |
-| Backend (prod) | Vercel Serverless Functions |
-| Base de datos | PostgreSQL (AWS RDS) |
-| Elevación | OpenTopoData API (gratuito) |
-| Clima | Open-Meteo API (gratuito) |
-| Routing snap | OSRM (gratuito) |
-| Tiles de mapa | OpenFreeMap / OpenTopoMap / ESRI (gratuitos) |
+| Gráficos | Recharts |
+| Backend | Vercel Serverless Functions (`api/`); en local se montan sobre Express (`scripts/dev-server.ts`) |
+| Base de datos | PostgreSQL 16 (Docker en local) |
+| Auth | Strava OAuth + JWT HS256 |
+| Elevación | Tiles Terrarium (AWS Open Data) |
+| Clima | Open-Meteo |
+| Routing snap | OSRM |
+| Geocoding | Nominatim (OpenStreetMap) |
+| Tiles de mapa | OpenFreeMap / OpenTopoMap / ESRI |
+| Tests | Vitest |
 
-No se requiere ningún API key de pago.
+Ninguna API de mapas, clima o elevación requiere key de pago.
 
 ---
 
@@ -71,46 +82,22 @@ No se requiere ningún API key de pago.
 
 ```
 RutasMap/
-├── api/                          # Backend
-│   ├── _db.ts                    # Pool de conexión PostgreSQL
-│   ├── routes.ts                 # GET / POST / DELETE /api/routes
-│   ├── routes/[id].ts            # DELETE /api/routes/:id
-│   ├── strava/
-│   │   ├── routes.ts             # Actividades Strava desde DB
-│   │   └── status.ts             # Estado de conexión
-│   └── server.ts                 # Servidor Express (solo desarrollo)
+├── api/                        # Funciones serverless (una por archivo)
+│   ├── _db.ts                  # Pool PostgreSQL + esquema idempotente
+│   ├── _http.ts                # Helpers: cookies, validación, admins
+│   ├── auth/                   # strava (inicio OAuth), callback, me, _jwt
+│   ├── routes.ts, routes/[id].ts
+│   ├── notes.ts, notes/[id].ts
+│   ├── search-history.ts
+│   └── strava/                 # routes (BD compartida), user-activities, status
+├── scripts/dev-server.ts       # Express local que monta los mismos handlers
 ├── src/
-│   ├── components/
-│   │   ├── Map/
-│   │   │   ├── MapView.tsx       # Mapa principal y renderizado de rutas
-│   │   │   ├── DrawingControls.tsx
-│   │   │   ├── LayerSwitcher.tsx
-│   │   │   └── GpxDropZone.tsx
-│   │   ├── RouteEditor/
-│   │   │   ├── RouteSidebar.tsx  # Listado, filtros y detalle de ruta
-│   │   │   └── MetricsSummary.tsx
-│   │   ├── ElevationProfile/
-│   │   │   ├── ElevationBar.tsx  # Panel inferior redimensionable
-│   │   │   └── ElevationProfile.tsx
-│   │   ├── Strava/
-│   │   │   └── StravaImportPanel.tsx
-│   │   └── Weather/
-│   │       └── WeatherPanel.tsx
-│   ├── hooks/
-│   │   ├── useRouteEditor.ts     # Drag-to-edit vértices en el mapa
-│   │   └── useElevationFetch.ts
-│   ├── services/
-│   │   ├── elevationService.ts
-│   │   ├── routingService.ts     # Snap to road (OSRM)
-│   │   ├── stravaService.ts      # Decodificación de polylines Google
-│   │   └── weatherService.ts
-│   ├── store/
-│   │   ├── routeStore.ts         # Rutas (sincronizadas con DB)
-│   │   └── mapStore.ts           # Configuración del mapa (localStorage)
-│   └── utils/
-│       ├── gpxParser.ts          # Import / export GPX
-│       ├── routeMetrics.ts       # Cálculo de métricas y dificultad
-│       └── geometry.ts
+│   ├── components/             # Map, RouteEditor, ElevationProfile, Strava, Weather, Auth, Toasts
+│   ├── hooks/                  # useRouteEditor, useElevationFetch, useIsMobile
+│   ├── services/               # api (cliente), elevation, routing, strava, weather, mapInstance
+│   ├── store/                  # route, map, auth, authModal, note, toast (Zustand)
+│   ├── types/
+│   └── utils/                  # gpxParser, routeMetrics, geometry, imageCompress, nanoid
 └── vercel.json
 ```
 
@@ -118,79 +105,58 @@ RutasMap/
 
 ## Instalación y uso local
 
-### Requisitos
-- Node.js 20+
-- Acceso a la base de datos PostgreSQL
-
-### Pasos
+Requisitos: Node.js 20+ y Docker Desktop.
 
 ```bash
-# 1. Clonar el repositorio
-git clone <repo-url>
-cd RutasMap
-
-# 2. Instalar dependencias
 npm install
-
-# 3. Configurar variables de entorno
-cp .env.example .env
-# Editar .env con las credenciales de la base de datos
-
-# 4. Iniciar en modo desarrollo
-npm run dev
+cp .env.example .env        # completar STRAVA_* y JWT_SECRET
+docker compose up -d db     # Postgres 16 en localhost:5434 (con datos de ejemplo)
+npm run dev                 # API (tsx watch, :3002) + Vite (:5180)
 ```
 
-La app abre en `http://localhost:5173`. La API corre en `http://localhost:3002`.
+O todo en contenedores: `docker compose --profile app up`.
 
-### Variables de entorno
+- La app abre en `http://localhost:5180` y Vite proxya `/api` a `http://localhost:3002`.
+- Al primer arranque, `docker/postgres/init/` crea `strava_activities` con 6 actividades de ejemplo; las tablas `rutasmap_*` las crea la API sola.
+- Reiniciar la base desde cero: `docker compose down -v && docker compose up -d db`.
+- Para el login, registra `localhost` como *Authorization Callback Domain* en tu app de Strava.
 
-```env
-DB_HOST=<host-postgresql>
-DB_USER=<usuario>
-DB_PASSWORD=<contraseña>
-DB_PORT=5432
-DB_NAME=<nombre-base-de-datos>
-API_PORT=3002
+| Script | Uso |
+|--------|-----|
+| `npm run dev` | API + frontend con recarga |
+| `npm test` | Tests unitarios (Vitest) |
+| `npm run typecheck` | Tipos de frontend y API |
+| `npm run build` | Build de producción |
 
-# Solo en desarrollo local (AWS RDS usa CA intermedia no confiada por Node)
-DB_SSL_REJECT_UNAUTHORIZED=false
-```
+Las variables de entorno están documentadas en [`.env.example`](.env.example).
 
 ---
 
 ## Despliegue en Vercel
 
-```bash
-npm run build
-vercel --prod
-```
-
-Configura las variables de entorno en `Settings → Environment Variables` del proyecto en Vercel. **No incluyas `DB_SSL_REJECT_UNAUTHORIZED`** en producción para mantener SSL activo.
-
-En producción también se recomienda configurar:
-```
-ALLOWED_ORIGINS=https://tu-dominio.vercel.app
-```
+Configura en *Settings → Environment Variables*: `DB_*`, `JWT_SECRET` (**obligatorio**, la API falla sin él en producción), `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, `APP_URL`, `FRONTEND_URL`, `ADMIN_STRAVA_ID` / `ADMIN_EMAILS`.
+**No incluyas `DB_SSL_REJECT_UNAUTHORIZED`** en producción.
 
 ---
 
 ## Base de datos
 
-RutasMap comparte base de datos PostgreSQL con **AnalisisStrava**. Las tablas relevantes son:
+En local corre en Docker (`docker-compose.yml`). `strava_activities` replica la tabla que antes sincronizaba **AnalisisStrava**. El esquema de `rutasmap_*` se crea/migra automáticamente en el primer request.
 
 | Tabla | Descripción |
 |-------|-------------|
-| `rutasmap_routes` | Rutas creadas o importadas en RutasMap |
+| `rutasmap_routes` | Rutas (dueño en `user_id`) |
+| `rutasmap_users` | Usuarios Strava y tokens OAuth |
+| `rutasmap_waypoint_notes` | Notas con foto por punto (autor en `user_id`) |
+| `rutasmap_search_history` | Últimas 5 búsquedas por usuario |
 | `strava_activities` | Actividades sincronizadas por AnalisisStrava (solo lectura) |
-
-La tabla `rutasmap_routes` se crea automáticamente al arrancar la API si no existe.
 
 ---
 
 ## Seguridad
 
-- Validación de input en todos los endpoints de escritura
-- SSL activo en conexiones a la base de datos en producción
-- CORS restringido a orígenes permitidos
-- Headers de seguridad HTTP via Vercel: `X-Content-Type-Options`, `X-Frame-Options`, `X-XSS-Protection`, `Referrer-Policy`
-- `.env` excluido de git
+- Escritura protegida por JWT; editar/borrar rutas solo dueño o admin; notas: autor, dueño de la ruta o admin
+- Firma JWT verificada en tiempo constante; `JWT_SECRET` obligatorio en producción
+- OAuth con `state` verificado vía cookie HttpOnly; el token vuelve en el fragmento `#` (no llega a logs ni `Referer`)
+- Validación de payloads (ids, coordenadas, colores, tamaño de fotos y rutas)
+- SSL hacia la BD, CORS restringido y headers de seguridad vía `vercel.json`

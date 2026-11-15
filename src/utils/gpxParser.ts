@@ -1,44 +1,44 @@
 import type { Coordinate, Route, ActivityType } from '../types/route'
 import { nanoid } from '../utils/nanoid'
 
+function readPoint(el: Element): Coordinate {
+  const ele = el.querySelector('ele')?.textContent
+  const elevation = ele != null ? parseFloat(ele) : NaN
+  return {
+    lat: parseFloat(el.getAttribute('lat') ?? ''),
+    lng: parseFloat(el.getAttribute('lon') ?? ''),
+    elevation: Number.isFinite(elevation) ? elevation : undefined,
+  }
+}
+
+function isValidCoord(c: Coordinate): boolean {
+  return Number.isFinite(c.lat) && Number.isFinite(c.lng) && Math.abs(c.lat) <= 90 && Math.abs(c.lng) <= 180
+}
+
 export function parseGPX(gpxText: string): Partial<Route> {
   const parser = new DOMParser()
   const doc = parser.parseFromString(gpxText, 'application/xml')
+  if (doc.querySelector('parsererror')) throw new Error('El archivo GPX no es XML válido')
 
-  const name = doc.querySelector('name')?.textContent ?? 'Ruta importada'
-  const trkpts = doc.querySelectorAll('trkpt')
-  const wptNodes = doc.querySelectorAll('wpt')
+  const name = (doc.querySelector('metadata > name') ?? doc.querySelector('trk > name') ?? doc.querySelector('name'))
+    ?.textContent?.trim() || 'Ruta importada'
 
-  const coordinates: Coordinate[] = []
-
-  trkpts.forEach(pt => {
-    const lat = parseFloat(pt.getAttribute('lat') ?? '0')
-    const lng = parseFloat(pt.getAttribute('lon') ?? '0')
-    const ele = pt.querySelector('ele')
-    const elevation = ele ? parseFloat(ele.textContent ?? '0') : undefined
-    coordinates.push({ lat, lng, elevation })
-  })
-
+  let coordinates = Array.from(doc.querySelectorAll('trkpt')).map(readPoint).filter(isValidCoord)
   // If no track points, try route points
   if (coordinates.length === 0) {
-    doc.querySelectorAll('rtept').forEach(pt => {
-      const lat = parseFloat(pt.getAttribute('lat') ?? '0')
-      const lng = parseFloat(pt.getAttribute('lon') ?? '0')
-      const ele = pt.querySelector('ele')
-      coordinates.push({ lat, lng, elevation: ele ? parseFloat(ele.textContent ?? '0') : undefined })
-    })
+    coordinates = Array.from(doc.querySelectorAll('rtept')).map(readPoint).filter(isValidCoord)
   }
+  if (coordinates.length < 2) throw new Error('El GPX no contiene una ruta con al menos 2 puntos')
 
-  const waypoints = Array.from(wptNodes).map(wpt => ({
-    id: nanoid(),
-    coordinate: {
-      lat: parseFloat(wpt.getAttribute('lat') ?? '0'),
-      lng: parseFloat(wpt.getAttribute('lon') ?? '0'),
-      elevation: wpt.querySelector('ele') ? parseFloat(wpt.querySelector('ele')!.textContent ?? '0') : undefined,
-    },
-    name: wpt.querySelector('name')?.textContent ?? undefined,
-    type: 'poi' as const,
-  }))
+  const waypoints = Array.from(doc.querySelectorAll('wpt'))
+    .map(wpt => ({ wpt, coordinate: readPoint(wpt) }))
+    .filter(({ coordinate }) => isValidCoord(coordinate))
+    .map(({ wpt, coordinate }) => ({
+      id: nanoid(),
+      coordinate,
+      name: wpt.querySelector('name')?.textContent ?? undefined,
+      type: 'poi' as const,
+    }))
 
   // Detect activity type from GPX type/keywords
   const typeText = (doc.querySelector('trk > type')?.textContent ?? '').toLowerCase()
@@ -52,7 +52,8 @@ export function parseGPX(gpxText: string): Partial<Route> {
 
   // Try to get the original date from GPX metadata
   const timeText = doc.querySelector('metadata > time')?.textContent ?? doc.querySelector('trkpt > time')?.textContent
-  const createdAt = timeText ? new Date(timeText).getTime() : Date.now()
+  const parsedTime = timeText ? new Date(timeText).getTime() : NaN
+  const createdAt = Number.isFinite(parsedTime) ? parsedTime : Date.now()
 
   return {
     id: nanoid(),

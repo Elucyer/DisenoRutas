@@ -1,13 +1,14 @@
 import { create } from 'zustand'
 import type { WaypointNote } from '../types/note'
 import { nanoid } from '../utils/nanoid'
-
-const API = import.meta.env.DEV ? '/strava-api' : ''
+import { apiFetch } from '../services/api'
+import { useAuthStore } from './authStore'
+import { useToastStore } from './toastStore'
 
 interface NoteStore {
   notes: WaypointNote[]
   loadNotes: (routeId: string) => Promise<void>
-  saveNote: (note: Omit<WaypointNote, 'id' | 'createdAt'>) => Promise<void>
+  saveNote: (note: Omit<WaypointNote, 'id' | 'createdAt' | 'userId'>) => Promise<boolean>
   deleteNote: (id: string) => Promise<void>
   clearNotes: () => void
 }
@@ -17,9 +18,7 @@ export const useNoteStore = create<NoteStore>()((set, get) => ({
 
   loadNotes: async (routeId) => {
     try {
-      const res = await fetch(`${API}/api/notes?routeId=${routeId}`)
-      if (!res.ok) return
-      const notes: WaypointNote[] = await res.json()
+      const notes = await apiFetch<WaypointNote[]>(`/api/notes?routeId=${encodeURIComponent(routeId)}`)
       set({ notes })
     } catch (e) {
       console.error('Error cargando notas:', e)
@@ -27,25 +26,31 @@ export const useNoteStore = create<NoteStore>()((set, get) => ({
   },
 
   saveNote: async (partial) => {
-    const note: WaypointNote = { ...partial, id: nanoid(), createdAt: Date.now() }
+    const note: WaypointNote = {
+      ...partial,
+      id: nanoid(),
+      createdAt: Date.now(),
+      userId: useAuthStore.getState().user?.id ?? null,
+    }
     set(state => ({ notes: [...state.notes, note] }))
     try {
-      await fetch(`${API}/api/notes`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(note),
-      })
+      await apiFetch('/api/notes', { method: 'POST', body: JSON.stringify(note) })
+      return true
     } catch (e) {
-      console.error('Error guardando nota:', e)
+      set(state => ({ notes: state.notes.filter(n => n.id !== note.id) }))
+      useToastStore.getState().error(`No se pudo guardar la nota: ${(e as Error).message}`)
+      return false
     }
   },
 
   deleteNote: async (id) => {
-    set(state => ({ notes: state.notes.filter(n => n.id !== id) }))
+    const previous = get().notes
+    set({ notes: previous.filter(n => n.id !== id) })
     try {
-      await fetch(`${API}/api/notes/${id}`, { method: 'DELETE' })
+      await apiFetch(`/api/notes/${id}`, { method: 'DELETE' })
     } catch (e) {
-      console.error('Error eliminando nota:', e)
+      set({ notes: previous })
+      useToastStore.getState().error(`No se pudo eliminar la nota: ${(e as Error).message}`)
     }
   },
 

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { getMapInstance } from '../../services/mapInstance'
-import { authHeader, useAuthStore } from '../../store/authStore'
+import { useAuthStore } from '../../store/authStore'
+import { apiFetch } from '../../services/api'
 import maplibregl from 'maplibre-gl'
 
 interface NominatimResult {
@@ -112,8 +113,7 @@ interface HistoryItem {
   result_type: string
 }
 
-const BASE = import.meta.env.DEV ? '/strava-api' : ''
-const API = `${BASE}/api/search-history`
+const HISTORY_PATH = '/api/search-history'
 
 export function MapSearch() {
   const user = useAuthStore(s => s.user)
@@ -130,8 +130,7 @@ export function MapSearch() {
   const fetchHistory = useCallback(async () => {
     if (!useAuthStore.getState().user) return
     try {
-      const res = await fetch(API, { headers: authHeader() })
-      if (res.ok) setHistory(await res.json())
+      setHistory(await apiFetch<HistoryItem[]>(HISTORY_PATH))
     } catch { /* silent */ }
   }, [])
 
@@ -215,9 +214,9 @@ export function MapSearch() {
       } catch { /* keep coordinate string */ }
     }
 
-    fetch(API, {
+    if (!useAuthStore.getState().user) return
+    apiFetch(HISTORY_PATH, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
       body: JSON.stringify({ display_name, lat, lng, result_type: r.type }),
     }).then(() => fetchHistory()).catch(() => {})
   }
@@ -229,13 +228,13 @@ export function MapSearch() {
   }
 
   const handleDeleteHistory = (id: string) => {
-    fetch(`${API}/${id}`, { method: 'DELETE', headers: authHeader() })
+    apiFetch(`${HISTORY_PATH}/${id}`, { method: 'DELETE' })
       .then(() => setHistory(prev => prev.filter(h => h.id !== id)))
       .catch(() => {})
   }
 
   const handleClearHistory = () => {
-    fetch(API, { method: 'DELETE', headers: authHeader() })
+    apiFetch(HISTORY_PATH, { method: 'DELETE' })
       .then(() => { setHistory([]); setOpen(false) })
       .catch(() => {})
   }

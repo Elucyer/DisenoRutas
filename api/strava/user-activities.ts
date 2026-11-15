@@ -24,7 +24,8 @@ async function getValidToken(userId: string): Promise<string | null> {
       refresh_token: user.refresh_token,
     }),
   })
-  const data = await res.json()
+  if (!res.ok) return null
+  const data = await res.json() as { access_token?: string; refresh_token?: string; expires_at?: number }
   if (!data.access_token) return null
 
   await pool.query(
@@ -43,14 +44,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const accessToken = await getValidToken(auth.sub)
     if (!accessToken) return res.status(401).json({ error: 'Token de Strava inválido, vuelve a conectar' })
 
-    const page = Number(req.query.page) || 1
+    const page = Math.min(50, Math.max(1, Math.floor(Number(req.query.page)) || 1))
     const stravaRes = await fetch(
       `https://www.strava.com/api/v3/athlete/activities?per_page=100&page=${page}`,
       { headers: { Authorization: `Bearer ${accessToken}` } }
     )
     if (!stravaRes.ok) return res.status(502).json({ error: 'Error al consultar Strava' })
 
-    const activities = await stravaRes.json()
+    const activities = await stravaRes.json() as Record<string, unknown>[]
     res.json(activities.map((a: Record<string, unknown>) => ({
       id: a.id,
       name: a.name,

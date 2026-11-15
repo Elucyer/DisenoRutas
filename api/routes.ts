@@ -1,17 +1,28 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { getPool, setupDB } from './_db.js'
 import { getAuth } from './auth/_jwt.js'
+import { ID_RE, isLat, isLng } from './_http.js'
 
-const VALID_ACTIVITY_TYPES = new Set(['hiking', 'running', 'cycling', 'skiing'])
-const ROUTE_ID_RE = /^[a-zA-Z0-9_-]{1,64}$/
+const VALID_ACTIVITY_TYPES = new Set(['hiking', 'running', 'cycling'])
+const MAX_COORDS = 50_000
+const COLOR_RE = /^#[0-9a-fA-F]{6}$/
 
 function validateRoute(r: unknown): string | null {
   if (!r || typeof r !== 'object') return 'Invalid body'
   const b = r as Record<string, unknown>
-  if (!b.id || typeof b.id !== 'string' || !ROUTE_ID_RE.test(b.id)) return 'Invalid id'
-  if (!b.name || typeof b.name !== 'string' || b.name.length > 200) return 'Invalid name'
-  if (!b.activityType || !VALID_ACTIVITY_TYPES.has(b.activityType as string)) return 'Invalid activityType'
-  if (!Array.isArray(b.coordinates) || b.coordinates.length < 2) return 'Invalid coordinates'
+  if (typeof b.id !== 'string' || !ID_RE.test(b.id)) return 'Invalid id'
+  if (typeof b.name !== 'string' || !b.name.trim() || b.name.length > 200) return 'Invalid name'
+  if (!VALID_ACTIVITY_TYPES.has(b.activityType as string)) return 'Invalid activityType'
+  if (!Array.isArray(b.coordinates) || b.coordinates.length < 2 || b.coordinates.length > MAX_COORDS) return 'Invalid coordinates'
+  for (const c of b.coordinates as Record<string, unknown>[]) {
+    if (!c || !isLat(c.lat) || !isLng(c.lng)) return 'Invalid coordinates'
+    if (c.elevation != null && (typeof c.elevation !== 'number' || !Number.isFinite(c.elevation))) return 'Invalid elevation'
+  }
+  if (b.waypoints != null && !Array.isArray(b.waypoints)) return 'Invalid waypoints'
+  if (b.color != null && (typeof b.color !== 'string' || !COLOR_RE.test(b.color))) return 'Invalid color'
+  if (b.description != null && (typeof b.description !== 'string' || b.description.length > 5000)) return 'Invalid description'
+  if (b.tags != null && (!Array.isArray(b.tags) || b.tags.length > 30 || b.tags.some(t => typeof t !== 'string' || t.length > 50))) return 'Invalid tags'
+  if (b.createdAt != null && (typeof b.createdAt !== 'number' || !Number.isFinite(b.createdAt))) return 'Invalid createdAt'
   return null
 }
 
@@ -22,7 +33,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // GET — list all routes (public)
     if (req.method === 'GET') {
-      const { rows } = await pool.query('SELECT * FROM rutasmap_routes ORDER BY created_at DESC')
+      const { rows } = await pool.query('SELECT * FROM rutasmap_routes ORDER BY created_at DESC NULLS LAST')
       return res.json(rows.map(r => ({
         id: r.id,
         name: r.name,
@@ -53,11 +64,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       )
       if (existing.length > 0) {
         const ownerId = existing[0].user_id
-        if (ownerId && ownerId !== auth.sub && !auth.isAdmin) {
+        if (ownerId !== auth.sub && !auth.isAdmin) {
           return res.status(403).json({ error: 'No tienes permiso para editar esta ruta' })
         }
       }
 
+      // user_id is kept on update so an admin edit doesn't steal ownership
       await pool.query(
         `INSERT INTO rutasmap_routes (id, name, activity_type, coordinates, waypoints, metrics, created_at, color, description, tags, user_id)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
@@ -69,11 +81,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
            metrics       = EXCLUDED.metrics,
            color         = EXCLUDED.color,
            description   = EXCLUDED.description,
-           tags          = EXCLUDED.tags`,
-        [r.id, r.name, r.activityType,
+           tags          = EXCLUDED.tags,
+           user_id       = COALESCE(rutasmap_routes.user_id, EXCLUDED.user_id)`,
+        [r.id, r.name.trim(), r.activityType,
          JSON.stringify(r.coordinates), JSON.stringify(r.waypoints ?? []),
          r.metrics ? JSON.stringify(r.metrics) : null,
-         r.createdAt ? new Date(r.createdAt).toISOString() : null,
+         r.createdAt ? new Date(r.createdAt).toISOString() : new Date().toISOString(),
          r.color ?? null, r.description ?? null, JSON.stringify(r.tags ?? []),
          auth.sub]
       )
@@ -84,6 +97,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === 'DELETE') {
       const auth = getAuth(req)
       if (!auth?.isAdmin) return res.status(403).json({ error: 'Solo admins pueden borrar todas las rutas' })
+      await pool.query('DELETE FROM rutasmap_waypoint_notes')
       await pool.query('DELETE FROM rutasmap_routes')
       return res.json({ ok: true })
     }

@@ -6,4 +6,5 @@ export interface WaypointNote {
   comment: string
   photo?: string   // base64 JPEG comprimido
   createdAt: number
+  userId?: string | null
 }

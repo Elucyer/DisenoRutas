@@ -1,8 +1,6 @@
 import type { ActivityType, Coordinate } from '../types/route'
-import { authHeader } from '../store/authStore'
+import { apiFetch } from './api'
 
-// In dev, Vite proxies /strava-api → localhost:3002. In prod (Vercel), API lives at /api directly.
-const BASE = import.meta.env.DEV ? '/strava-api' : ''
 
 export interface StravaActivity {
   id: number
@@ -61,25 +59,17 @@ function mapActivityType(sportType: string): ActivityType {
 }
 
 export async function fetchStravaActivities(): Promise<StravaActivity[]> {
-  const res = await fetch(`${BASE}/api/strava/routes`)
-  if (!res.ok) throw new Error('No se pudo conectar al backend de Strava')
-  return res.json()
+  return apiFetch<StravaActivity[]>('/api/strava/routes')
 }
 
 /** Fetch the authenticated user's own Strava activities via the API */
 export async function fetchUserStravaActivities(): Promise<StravaActivity[]> {
-  const res = await fetch(`${BASE}/api/strava/user-activities`, {
-    headers: authHeader(),
-  })
-  if (!res.ok) throw new Error('No se pudo cargar tus actividades de Strava')
-  return res.json()
+  return apiFetch<StravaActivity[]>('/api/strava/user-activities')
 }
 
 export async function checkStravaConnected(): Promise<boolean> {
   try {
-    const res = await fetch(`${BASE}/api/strava/status`)
-    if (!res.ok) return false
-    const data = await res.json()
+    const data = await apiFetch<{ connected?: boolean }>('/api/strava/status')
     return data.connected === true
   } catch {
     return false

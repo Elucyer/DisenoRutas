@@ -1,0 +1,47 @@
+name: rutasmap
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-rutasmap}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-rutasmap}
+      POSTGRES_DB: ${DB_NAME:-analisisstrava}
+    ports:
+      - "${DB_PORT:-5434}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Runs only on first start (empty volume)
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Optional: full stack in containers -> docker compose --profile app up
+  app:
+    profiles: ["app"]
+    image: node:22-alpine
+    working_dir: /app
+    command: sh -c "npm ci && npx concurrently -n api,web \"npx tsx watch scripts/dev-server.ts\" \"npx vite --host 0.0.0.0\""
+    env_file: .env
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_SSL: "false"
+      CHOKIDAR_USEPOLLING: "true"
+    ports:
+      - "5180:5180"
+      - "3002:3002"
+    volumes:
+      - .:/app
+      - node_modules:/app/node_modules
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  node_modules:

@@ -1,5 +1,7 @@
 import { useState, useRef } from 'react'
 import { useNoteStore } from '../../store/noteStore'
+import { useRouteStore } from '../../store/routeStore'
+import { useAuthStore, canDeleteNote } from '../../store/authStore'
 import { compressImage } from '../../utils/imageCompress'
 import type { WaypointNote } from '../../types/note'
 
@@ -31,8 +33,10 @@ export function AddNoteModal({ routeId, lat, lng, onClose }: AddNoteModalProps) 
 
   const handleSave = async () => {
     if (!comment.trim() && !photo) return
-    await saveNote({ routeId, lat, lng, comment: comment.trim(), photo })
-    onClose()
+    setLoading(true)
+    const ok = await saveNote({ routeId, lat, lng, comment: comment.trim(), photo })
+    setLoading(false)
+    if (ok) onClose()
   }
 
   return (
@@ -83,7 +87,7 @@ export function AddNoteModal({ routeId, lat, lng, onClose }: AddNoteModalProps) 
           </button>
           <button
             onClick={handleSave}
-            disabled={!comment.trim() && !photo}
+            disabled={loading || (!comment.trim() && !photo)}
             className="flex-1 py-2 rounded-lg text-xs bg-orange-500 hover:bg-orange-600 disabled:opacity-40 text-white font-medium transition-all"
           >
             Guardar nota
@@ -101,6 +105,9 @@ interface ViewNoteModalProps {
 
 export function ViewNoteModal({ note, onClose }: ViewNoteModalProps) {
   const { deleteNote } = useNoteStore()
+  const user = useAuthStore(s => s.user)
+  const routeOwner = useRouteStore(s => s.routes.find(r => r.id === note.routeId)?.userId)
+  const canDelete = canDeleteNote(user, note.userId, routeOwner)
 
   const handleDelete = async () => {
     await deleteNote(note.id)
@@ -131,12 +138,14 @@ export function ViewNoteModal({ note, onClose }: ViewNoteModalProps) {
           <button onClick={onClose} className="flex-1 py-2 rounded-lg text-xs border border-white/10 text-gray-400 hover:bg-white/5 transition-all">
             Cerrar
           </button>
-          <button
-            onClick={handleDelete}
-            className="py-2 px-4 rounded-lg text-xs bg-red-500/20 border border-red-500/40 text-red-400 hover:bg-red-500/30 transition-all"
-          >
-            🗑️ Eliminar
-          </button>
+          {canDelete && (
+            <button
+              onClick={handleDelete}
+              className="py-2 px-4 rounded-lg text-xs bg-red-500/20 border border-red-500/40 text-red-400 hover:bg-red-500/30 transition-all"
+            >
+              🗑️ Eliminar
+            </button>
+          )}
         </div>
       </div>
     </div>

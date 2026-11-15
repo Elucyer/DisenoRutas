@@ -11,6 +11,15 @@ import { useAuthStore } from './store/authStore'
 import { useAuthModalStore } from './store/authModalStore'
 import { AuthModal } from './components/Auth/AuthModal'
 import { useIsMobile } from './hooks/useIsMobile'
+import { useToastStore } from './store/toastStore'
+import { Toasts } from './components/Toasts'
+
+const AUTH_ERRORS: Record<string, string> = {
+  access_denied: 'Cancelaste el acceso a Strava',
+  invalid_state: 'La sesión de login expiró, inténtalo de nuevo',
+  strava_error: 'Strava rechazó la autorización',
+  server_error: 'Error del servidor al iniciar sesión',
+}
 
 const MIN_SIDEBAR = 220
 const MAX_SIDEBAR = 520
@@ -27,22 +36,29 @@ export default function App() {
   useElevationFetch()
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const token = params.get('token')
-    const authError = params.get('auth_error')
-    if (token) {
-      useAuthStore.getState().login(token)
-      window.history.replaceState({}, '', window.location.pathname)
-    } else if (authError) {
-      console.warn('Auth error:', authError)
-      window.history.replaceState({}, '', window.location.pathname)
+    // OAuth callback returns the token in the URL fragment (never sent to servers)
+    const hash = new URLSearchParams(window.location.hash.slice(1))
+    const token = hash.get('token')
+    const authError = hash.get('auth_error')
+    if (token || authError) {
+      if (token) {
+        useAuthStore.getState().login(token)
+        useToastStore.getState().success('Sesión iniciada con Strava')
+      } else {
+        useToastStore.getState().error(AUTH_ERRORS[authError!] ?? 'No se pudo iniciar sesión')
+      }
+      window.history.replaceState({}, '', window.location.pathname + window.location.search)
     }
 
     loadRoutes().then(() => {
       const p = new URLSearchParams(window.location.search)
       const sharedRoute = p.get('route')
       if (sharedRoute) {
-        useRouteStore.getState().setActiveRoute(sharedRoute)
+        if (useRouteStore.getState().routes.some(r => r.id === sharedRoute)) {
+          useRouteStore.getState().setActiveRoute(sharedRoute)
+        } else {
+          useToastStore.getState().error('La ruta compartida ya no existe')
+        }
         window.history.replaceState({}, '', window.location.pathname)
       }
     })
@@ -73,6 +89,7 @@ export default function App() {
     return (
       <div className="relative h-screen w-screen overflow-hidden">
         {authModalOpen && <AuthModal />}
+        <Toasts />
 
         {/* Mapa ocupa toda la pantalla */}
         <div className="absolute inset-0">
@@ -128,6 +145,7 @@ export default function App() {
   return (
     <div className="flex h-screen w-screen overflow-hidden">
       {authModalOpen && <AuthModal />}
+      <Toasts />
       {/* Sidebar */}
       <div className="relative flex-shrink-0 flex flex-col z-20 shadow-2xl" style={{ width: sidebarWidth }}>
         <RouteSidebar />
